@@ -1,0 +1,13 @@
+{
+  "name": "aurelia-ghl-auditor",
+  "version": "1.0.0",
+  "description": "Auditor diario de conversaciones IA en GoHighLevel para Aurelia",
+  "main": "auditor.js",
+  "scripts": {
+    "start": "node auditor.js"
+  },
+  "dependencies": {},
+  "engines": {
+    "node": ">=20"
+  }
+}
