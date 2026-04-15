@@ -1,0 +1,52 @@
+name: Aurelia — Auditor GHL Diario
+
+on:
+  schedule:
+    # 9:00 AM Argentina (GMT-3) = 12:00 UTC
+    - cron: '0 12 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      cliente:
+        description: 'Cliente a auditar (dejar vacío para todos)'
+        required: false
+        default: ''
+      periodo:
+        description: 'Período en horas a auditar (default: 24)'
+        required: false
+        default: '24'
+
+jobs:
+  auditar:
+    runs-on: ubuntu-latest
+
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GHL_APIKEY_RAME: ${{ secrets.GHL_APIKEY_RAME }}
+      GHL_LOCID_RAME: ${{ secrets.GHL_LOCID_RAME }}
+      GHL_APIKEY_ICS: ${{ secrets.GHL_APIKEY_ICS }}
+      GHL_LOCID_ICS: ${{ secrets.GHL_LOCID_ICS }}
+      GHL_APIKEY_NOBIS: ${{ secrets.GHL_APIKEY_NOBIS }}
+      GHL_LOCID_NOBIS: ${{ secrets.GHL_LOCID_NOBIS }}
+      GHL_APIKEY_SISTCARGAS: ${{ secrets.GHL_APIKEY_SISTCARGAS }}
+      GHL_LOCID_SISTCARGAS: ${{ secrets.GHL_LOCID_SISTCARGAS }}
+      GHL_APIKEY_ALAMBRADOS: ${{ secrets.GHL_APIKEY_ALAMBRADOS }}
+      GHL_LOCID_ALAMBRADOS: ${{ secrets.GHL_LOCID_ALAMBRADOS }}
+      DISCORD_WEBHOOK_AURELIA: ${{ secrets.DISCORD_WEBHOOK_AURELIA }}
+
+    steps:
+      - name: Checkout repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Instalar dependencias
+        run: npm install
+
+      - name: Ejecutar auditoría
+        run: node auditor.js
+        env:
+          CLIENTE_FILTRO: ${{ github.event.inputs.cliente }}
+          PERIODO_HORAS: ${{ github.event.inputs.periodo || '24' }}
