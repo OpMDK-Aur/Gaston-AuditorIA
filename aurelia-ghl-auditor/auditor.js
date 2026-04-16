@@ -50,7 +50,7 @@ const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_AURELIA;
 const CLIENTE_FILTRO = process.env.CLIENTE_FILTRO || '';
 const PERIODO_HORAS = parseInt(process.env.PERIODO_HORAS || '24', 10);
-const MODELO_CLAUDE = 'claude-sonnet-4-6';
+const MODELO_CLAUDE = 'claude-haiku-4-5-20251001';
 
 // Horario comercial Argentina (GMT-3)
 const HORA_INICIO_COMERCIAL = 9;
@@ -254,6 +254,37 @@ function detectarIANoResponde(mensajes) {
   return alertas;
 }
 
+
+// ─── LLAMADA A CLAUDE CON RETRY AUTOMÁTICO ───────────────────────────────────
+
+async function callClaudeConRetry(body, intentos = 3) {
+  for (let i = 0; i < intentos; i++) {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (res.ok) return res;
+
+    if (res.status === 429) {
+      const espera = (i + 1) * 10000;
+      console.warn(`Rate limit de Anthropic. Reintento ${i + 1}/${intentos} en ${espera / 1000}s...`);
+      await sleep(espera);
+      continue;
+    }
+
+    console.error(`Error de Anthropic: ${res.status}`);
+    return null;
+  }
+  console.error('Se agotaron los reintentos por rate limit de Anthropic.');
+  return null;
+}
+
 // ─── ANÁLISIS CON CLAUDE (ALERTA 2 — ERROR DE PROMPT) ────────────────────────
 
 async function detectarErrorDePrompt(mensajes, cliente) {
@@ -266,14 +297,7 @@ async function detectarErrorDePrompt(mensajes, cliente) {
     .map(m => `[${m.direction === 'inbound' ? 'USUARIO' : 'BOT'}] ${m.body || ''}`)
     .join('\n');
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
+  const res = await callClaudeConRetry({
       model: MODELO_CLAUDE,
       max_tokens: 1000,
       messages: [
@@ -300,13 +324,9 @@ Analizá la conversación y respondé SOLO en JSON con este formato exacto, sin 
 Solo marcá hay_error: true si el error es claro y grave (no ambigüedades). En caso de duda, respondé false.`,
         },
       ],
-    }),
   });
 
-  if (!res.ok) {
-    console.error(`[${cliente.nombre}] Error al llamar a Claude: ${res.status}`);
-    return null;
-  }
+  if (!res) return null;
 
   const data = await res.json();
   const texto = data.content?.[0]?.text || '{}';
