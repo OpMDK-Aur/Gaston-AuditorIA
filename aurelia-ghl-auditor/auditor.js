@@ -38,6 +38,12 @@ const CLIENTES = [
     locationId: process.env.GHL_LOCID_ALAMBRADOS,
     promptFile: 'references/prompts/alambrados.md',
   },
+  {
+    nombre: 'MDK',
+    apiKey: process.env.GHL_APIKEY_MDK,
+    locationId: process.env.GHL_LOCID_MDK,
+    promptFile: 'references/prompts/mdk.md',
+  },
 ];
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
