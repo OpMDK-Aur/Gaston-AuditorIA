@@ -106,7 +106,7 @@ async function obtenerConversaciones(cliente, startAfterDate) {
       {
         headers: {
           Authorization: `Bearer ${cliente.apiKey}`,
-          Version: '2021-04-15',
+          Version: '2021-07-28',
         },
       }
     );
@@ -133,7 +133,7 @@ async function obtenerMensajes(cliente, conversationId) {
     {
       headers: {
         Authorization: `Bearer ${cliente.apiKey}`,
-        Version: '2021-04-15',
+        Version: '2021-07-28',
       },
     }
   );
