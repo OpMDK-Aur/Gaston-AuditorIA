@@ -14,6 +14,10 @@ on:
         description: 'Período en horas a auditar (default: 24)'
         required: false
         default: '24'
+      contact_id:
+        description: 'Contact ID específico para testear (opcional)'
+        required: false
+        default: ''
 
 jobs:
   auditar:
@@ -21,17 +25,12 @@ jobs:
 
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      GHL_APIKEY_RAME: ${{ secrets.GHL_APIKEY_RAME }}
+      GHL_AGENCY_APIKEY: ${{ secrets.GHL_AGENCY_APIKEY }}
       GHL_LOCID_RAME: ${{ secrets.GHL_LOCID_RAME }}
-      GHL_APIKEY_ICS: ${{ secrets.GHL_APIKEY_ICS }}
       GHL_LOCID_ICS: ${{ secrets.GHL_LOCID_ICS }}
-      GHL_APIKEY_NOBIS: ${{ secrets.GHL_APIKEY_NOBIS }}
       GHL_LOCID_NOBIS: ${{ secrets.GHL_LOCID_NOBIS }}
-      GHL_APIKEY_SISTCARGAS: ${{ secrets.GHL_APIKEY_SISTCARGAS }}
       GHL_LOCID_SISTCARGAS: ${{ secrets.GHL_LOCID_SISTCARGAS }}
-      GHL_APIKEY_ALAMBRADOS: ${{ secrets.GHL_APIKEY_ALAMBRADOS }}
       GHL_LOCID_ALAMBRADOS: ${{ secrets.GHL_LOCID_ALAMBRADOS }}
-      GHL_APIKEY_MDK: ${{ secrets.GHL_APIKEY_MDK }}
       GHL_LOCID_MDK: ${{ secrets.GHL_LOCID_MDK }}
       DISCORD_WEBHOOK_AURELIA: ${{ secrets.DISCORD_WEBHOOK_AURELIA }}
 
@@ -52,3 +51,4 @@ jobs:
         env:
           CLIENTE_FILTRO: ${{ github.event.inputs.cliente }}
           PERIODO_HORAS: ${{ github.event.inputs.periodo || '24' }}
+          CONTACT_ID_TEST: ${{ github.event.inputs.contact_id }}
