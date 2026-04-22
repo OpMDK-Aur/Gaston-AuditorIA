@@ -88,99 +88,63 @@ function leerArchivoReferencia(filePath) {
 function ghlHeaders() {
   return {
     Authorization: `Bearer ${GHL_AGENCY_APIKEY}`,
-    Version: '2021-07-28',
+    version: '2021-07-28',
     'Content-Type': 'application/json',
   };
 }
 
-// STEP 1 — Buscar contactos recientes via POST /contacts/search con filtro dateAdded
-async function obtenerContactosRecientes(cliente, startAfterDate) {
-  const contactos = [];
+// STEP 1 — Buscar conversaciones recientes por fecha
+async function obtenerConversaciones(cliente, startAfterDate) {
+  const conversaciones = [];
   let page = 1;
 
   const fechaDesde = new Date(startAfterDate).toISOString();
   const fechaHasta = new Date().toISOString();
 
   while (true) {
-    const body = {
+    const params = new URLSearchParams({
       locationId: cliente.locationId,
-      pageLimit: 100,
-      page: page,
-      filters: [
-        {
-          field: 'dateAdded',
-          operator: 'range',
-          value: {
-            gte: fechaDesde,
-            lte: fechaHasta,
-          },
-        },
-      ],
-      sort: [
-        {
-          field: 'dateAdded',
-          direction: 'desc',
-        },
-      ],
-    };
+      page: page.toString(),
+      pageLimit: '100',
+      lastMessageType: 'TYPE_WHATSAPP',
+    });
 
     const res = await fetch(
-      'https://services.leadconnectorhq.com/contacts/search',
+      `https://services.leadconnectorhq.com/conversations/search?${params}`,
       {
-        method: 'POST',
+        method: 'GET',
         headers: ghlHeaders(),
-        body: JSON.stringify(body),
       }
     );
 
     if (!res.ok) {
       const detalle = await res.text();
-      console.error(`[${cliente.nombre}] Error al buscar contactos: ${res.status}`);
+      console.error(`[${cliente.nombre}] Error al buscar conversaciones: ${res.status}`);
       console.error(`  Detalle: ${detalle}`);
       break;
     }
 
     const data = await res.json();
-    const todos = data.contacts || [];
-    contactos.push(...todos);
+    const todos = data.conversations || [];
 
-    // Si es la última página, terminamos
-    if (todos.length < 100) break;
+    // Filtrar por período
+    const recientes = todos.filter(c => {
+      const fecha = new Date(c.lastMessageDate || c.dateAdded || c.createdAt || 0).getTime();
+      return fecha >= startAfterDate;
+    });
+
+    conversaciones.push(...recientes);
+
+    // Si ninguna del lote está en el período o es la última página, terminamos
+    if (todos.length < 100 || recientes.length === 0) break;
     page++;
     await sleep(300);
   }
 
-  return contactos;
+  return conversaciones;
 }
 
-// STEP 2 — Obtener conversación por contactId
-async function obtenerConversacionPorContacto(cliente, contactId) {
-  const params = new URLSearchParams({
-    locationId: cliente.locationId,
-    contactId: contactId,
-  });
-
-  const res = await fetch(
-    `https://services.leadconnectorhq.com/conversations/search?${params}`,
-    {
-      method: 'GET',
-      headers: ghlHeaders(),
-    }
-  );
-
-  if (!res.ok) {
-    const detalle = await res.text();
-    console.error(`[${cliente.nombre}] Error al obtener conversación del contacto ${contactId}: ${res.status}`);
-    console.error(`  Detalle: ${detalle}`);
-    return null;
-  }
-
-  const data = await res.json();
-  const conversaciones = data.conversations || [];
-  return conversaciones.length > 0 ? conversaciones[0] : null;
-}
-
-// STEP 3 — Obtener mensajes de una conversación
+// STEP 2 — Obtener mensajes de una conversación
 async function obtenerMensajes(cliente, conversationId) {
   const res = await fetch(
     `https://services.leadconnectorhq.com/conversations/${conversationId}/messages`,
@@ -472,24 +436,20 @@ async function auditarCliente(cliente) {
   const ahora = Date.now();
   const startAfterDate = ahora - PERIODO_HORAS * 60 * 60 * 1000;
 
-  // PASO 1 — Obtener contactos: directo por ID o búsqueda por período
-  let contactos = [];
+  // PASO 1 — Obtener conversaciones recientes
+  let conversaciones = [];
   if (CONTACT_ID_TEST) {
     console.log(`   → Modo test: usando contactId ${CONTACT_ID_TEST}`);
-    contactos = [{ id: CONTACT_ID_TEST }];
+    conversaciones = [{ id: CONTACT_ID_TEST, contactId: CONTACT_ID_TEST }];
   } else {
-    contactos = await obtenerContactosRecientes(cliente, startAfterDate);
+    conversaciones = await obtenerConversaciones(cliente, startAfterDate);
   }
-  console.log(`   → ${contactos.length} contactos encontrados en el período`);
+  console.log(`   → ${conversaciones.length} conversaciones encontradas en el período`);
 
   const alertasPorConversacion = [];
 
-  for (const contacto of contactos) {
-    // PASO 2 — Obtener conversación del contacto
-    const conv = await obtenerConversacionPorContacto(cliente, contacto.id);
-    if (!conv) continue;
-
-    // PASO 3 — Obtener mensajes de la conversación
+  for (const conv of conversaciones) {
+    // PASO 2 — Obtener mensajes de la conversación
     const mensajes = await obtenerMensajes(cliente, conv.id);
     if (mensajes.length === 0) continue;
 
@@ -508,14 +468,14 @@ async function auditarCliente(cliente) {
     if (alertaErrorPrompt) alertas.push(alertaErrorPrompt);
 
     if (alertas.length > 0) {
-      const contactoUrl = `https://app.gohighlevel.com/v2/location/${cliente.locationId}/contacts/${contacto.id}`;
+      const contactoUrl = `https://app.gohighlevel.com/v2/location/${cliente.locationId}/contacts/${conv.contactId}`;
       alertasPorConversacion.push({ contactoUrl, alertas });
     }
 
     await sleep(300);
   }
 
-  return { conversacionesAnalizadas: contactos.length, alertasPorConversacion };
+  return { conversacionesAnalizadas: conversaciones.length, alertasPorConversacion };
 }
 
 async function main() {
