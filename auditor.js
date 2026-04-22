@@ -45,6 +45,7 @@ const GHL_AGENCY_APIKEY = process.env.GHL_AGENCY_APIKEY;
 const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_AURELIA;
 const CLIENTE_FILTRO = process.env.CLIENTE_FILTRO || '';
 const PERIODO_HORAS = parseInt(process.env.PERIODO_HORAS || '24', 10);
+const CONTACT_ID_TEST = process.env.CONTACT_ID_TEST || '';
 const MODELO_CLAUDE = 'claude-haiku-4-5-20251001';
 
 // Horario comercial Argentina (GMT-3)
@@ -465,8 +466,14 @@ async function auditarCliente(cliente) {
   const ahora = Date.now();
   const startAfterDate = ahora - PERIODO_HORAS * 60 * 60 * 1000;
 
-  // PASO 1 — Obtener contactos recientes
-  const contactos = await obtenerContactosRecientes(cliente, startAfterDate);
+  // PASO 1 — Obtener contactos: directo por ID o búsqueda por período
+  let contactos = [];
+  if (CONTACT_ID_TEST) {
+    console.log(`   → Modo test: usando contactId ${CONTACT_ID_TEST}`);
+    contactos = [{ id: CONTACT_ID_TEST }];
+  } else {
+    contactos = await obtenerContactosRecientes(cliente, startAfterDate);
+  }
   console.log(`   → ${contactos.length} contactos encontrados en el período`);
 
   const alertasPorConversacion = [];
