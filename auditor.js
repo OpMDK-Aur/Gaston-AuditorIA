@@ -92,18 +92,29 @@ function ghlHeaders() {
   };
 }
 
-// STEP 1 — Buscar contactos recientes via POST /contacts/search
+// STEP 1 — Buscar contactos recientes via POST /contacts/search con filtro dateAdded
 async function obtenerContactosRecientes(cliente, startAfterDate) {
   const contactos = [];
   let page = 1;
+
+  const fechaDesde = new Date(startAfterDate).toISOString();
+  const fechaHasta = new Date().toISOString();
 
   while (true) {
     const body = {
       locationId: cliente.locationId,
       pageLimit: 100,
       page: page,
-      sortBy: 'date_added',
-      sortOrder: 'desc',
+      filters: [
+        {
+          field: 'dateAdded',
+          operator: 'range',
+          value: {
+            gt: fechaDesde,
+            lt: fechaHasta,
+          },
+        },
+      ],
     };
 
     const res = await fetch(
@@ -124,17 +135,10 @@ async function obtenerContactosRecientes(cliente, startAfterDate) {
 
     const data = await res.json();
     const todos = data.contacts || [];
+    contactos.push(...todos);
 
-    // Filtrar por período
-    const recientes = todos.filter(c => {
-      const fecha = new Date(c.dateAdded || c.createdAt || 0).getTime();
-      return fecha >= startAfterDate;
-    });
-
-    contactos.push(...recientes);
-
-    // Si ninguno del lote está en el período o es la última página, terminamos
-    if (todos.length < 100 || recientes.length === 0) break;
+    // Si es la última página, terminamos
+    if (todos.length < 100) break;
     page++;
     await sleep(300);
   }
