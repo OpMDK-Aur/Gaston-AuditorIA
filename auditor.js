@@ -111,9 +111,15 @@ async function obtenerContactosRecientes(cliente, startAfterDate) {
           field: 'dateAdded',
           operator: 'range',
           value: {
-            gt: fechaDesde,
-            lt: fechaHasta,
+            gte: fechaDesde,
+            lte: fechaHasta,
           },
+        },
+      ],
+      sort: [
+        {
+          field: 'dateAdded',
+          direction: 'desc',
         },
       ],
     };
