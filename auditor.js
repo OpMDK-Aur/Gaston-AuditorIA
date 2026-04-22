@@ -1,4 +1,4 @@
-// auditor.js — Aurelia GHL Auditor
+/// auditor.js — Aurelia GHL Auditor
 // Corre diariamente a las 9:00 AM Argentina (GMT-3)
 // Llama a la API de GHL para obtener conversaciones y las analiza con Claude
 
@@ -10,38 +10,43 @@ const path = require('path');
 const CLIENTES = [
   {
     nombre: 'Ramé Travel',
+    apiKey: process.env.GHL_APIKEY_RAME,
     locationId: process.env.GHL_LOCID_RAME,
     promptFile: 'references/prompts/rame.md',
   },
   {
     nombre: 'ICS Salud',
+    apiKey: process.env.GHL_APIKEY_ICS,
     locationId: process.env.GHL_LOCID_ICS,
     promptFile: 'references/prompts/ics.md',
   },
   {
     nombre: 'Nobis',
+    apiKey: process.env.GHL_APIKEY_NOBIS,
     locationId: process.env.GHL_LOCID_NOBIS,
     promptFile: 'references/prompts/nobis.md',
   },
   {
     nombre: 'Sistemas de Cargas',
+    apiKey: process.env.GHL_APIKEY_SISTCARGAS,
     locationId: process.env.GHL_LOCID_SISTCARGAS,
     promptFile: 'references/prompts/sistcargas.md',
   },
   {
     nombre: 'Alambrados Patagonia',
+    apiKey: process.env.GHL_APIKEY_ALAMBRADOS,
     locationId: process.env.GHL_LOCID_ALAMBRADOS,
     promptFile: 'references/prompts/alambrados.md',
   },
   {
     nombre: 'MDK',
+    apiKey: process.env.GHL_APIKEY_MDK,
     locationId: process.env.GHL_LOCID_MDK,
     promptFile: 'references/prompts/mdk.md',
   },
 ];
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const GHL_AGENCY_APIKEY = process.env.GHL_AGENCY_APIKEY;
 const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_AURELIA;
 const CLIENTE_FILTRO = process.env.CLIENTE_FILTRO || '';
 const PERIODO_HORAS = parseInt(process.env.PERIODO_HORAS || '24', 10);
@@ -85,9 +90,9 @@ function leerArchivoReferencia(filePath) {
 
 // ─── API GHL ─────────────────────────────────────────────────────────────────
 
-function ghlHeaders() {
+function ghlHeaders(apiKey) {
   return {
-    Authorization: `Bearer ${GHL_AGENCY_APIKEY}`,
+    Authorization: `Bearer ${apiKey}`,
     version: '2021-07-28',
     'Content-Type': 'application/json',
   };
@@ -113,7 +118,7 @@ async function obtenerConversaciones(cliente, startAfterDate) {
       `https://services.leadconnectorhq.com/conversations/search?${params}`,
       {
         method: 'GET',
-        headers: ghlHeaders(),
+        headers: ghlHeaders(cliente.apiKey),
       }
     );
 
@@ -150,7 +155,7 @@ async function obtenerMensajes(cliente, conversationId) {
     `https://services.leadconnectorhq.com/conversations/${conversationId}/messages`,
     {
       method: 'GET',
-      headers: ghlHeaders(),
+      headers: ghlHeaders(cliente.apiKey),
     }
   );
 
