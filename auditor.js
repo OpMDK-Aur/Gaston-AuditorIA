@@ -89,53 +89,81 @@ function leerArchivoReferencia(filePath) {
 
 // ─── API GHL ─────────────────────────────────────────────────────────────────
 
-async function obtenerConversaciones(cliente, startAfterDate) {
-  const conversaciones = [];
-  let nextPage = null;
+function ghlHeaders(cliente) {
+  return {
+    Authorization: `Bearer ${cliente.apiKey}`,
+    Version: '2021-07-28',
+    'Content-Type': 'application/json',
+  };
+}
 
-  do {
+async function obtenerContactosRecientes(cliente, startAfterDate) {
+  const contactos = [];
+  let page = 1;
+
+  while (true) {
     const params = new URLSearchParams({
       locationId: cliente.locationId,
-      startAfterDate: startAfterDate.toString(),
       limit: '100',
+      page: page.toString(),
+      sortBy: 'date_added',
+      sortOrder: 'desc',
     });
-    if (nextPage) params.set('startAfter', nextPage);
 
     const res = await fetch(
-      `https://services.leadconnectorhq.com/conversations/search?${params}`,
-      {
-        headers: {
-          Authorization: `Bearer ${cliente.apiKey}`,
-          Version: '2021-07-28',
-        },
-      }
+      `https://services.leadconnectorhq.com/contacts/?${params}`,
+      { headers: ghlHeaders(cliente) }
     );
 
     if (!res.ok) {
-      console.error(`[${cliente.nombre}] Error al obtener conversaciones: ${res.status}`);
+      console.error(`[${cliente.nombre}] Error al obtener contactos: ${res.status}`);
+      const body = await res.text();
+      console.error(`  Detalle: ${body}`);
       break;
     }
 
     const data = await res.json();
-    const items = data.conversations || [];
-    conversaciones.push(...items);
-    nextPage = data.nextPage || null;
+    const items = (data.contacts || []).filter(c => {
+      const fecha = new Date(c.dateAdded || c.createdAt || 0).getTime();
+      return fecha >= startAfterDate;
+    });
 
-    if (nextPage) await sleep(300);
-  } while (nextPage);
+    contactos.push(...items);
 
-  return conversaciones;
+    // Si la última página no trajo items dentro del período, terminamos
+    if (!data.contacts || data.contacts.length < 100 || items.length === 0) break;
+    page++;
+    await sleep(300);
+  }
+
+  return contactos;
+}
+
+async function obtenerConversacionPorContacto(cliente, contactId) {
+  const params = new URLSearchParams({
+    locationId: cliente.locationId,
+    contactId: contactId,
+  });
+
+  const res = await fetch(
+    `https://services.leadconnectorhq.com/conversations/search?${params}`,
+    { headers: ghlHeaders(cliente) }
+  );
+
+  if (!res.ok) {
+    console.error(`[${cliente.nombre}] Error al obtener conversación del contacto ${contactId}: ${res.status}`);
+    return null;
+  }
+
+  const data = await res.json();
+  const conversaciones = data.conversations || [];
+  return conversaciones.length > 0 ? conversaciones[0] : null;
 }
 
 async function obtenerMensajes(cliente, conversationId) {
   const res = await fetch(
     `https://services.leadconnectorhq.com/conversations/${conversationId}/messages`,
-    {
-      headers: {
-        Authorization: `Bearer ${cliente.apiKey}`,
-        Version: '2021-07-28',
-      },
-    }
+    { headers: ghlHeaders(cliente) }
   );
 
   if (!res.ok) {
@@ -145,7 +173,11 @@ async function obtenerMensajes(cliente, conversationId) {
 
   const data = await res.json();
   const mensajes = data.messages || [];
-  return mensajes.sort((a, b) => a.dateAdded - b.dateAdded);
+  return mensajes.sort((a, b) => {
+    const ta = new Date(a.dateAdded || a.createdAt || 0).getTime();
+    const tb = new Date(b.dateAdded || b.createdAt || 0).getTime();
+    return ta - tb;
+  });
 }
 
 // ─── DETECCIÓN DE ALERTAS ─────────────────────────────────────────────────────
@@ -414,12 +446,18 @@ async function auditarCliente(cliente) {
   const ahora = Date.now();
   const startAfterDate = ahora - PERIODO_HORAS * 60 * 60 * 1000;
 
-  const conversaciones = await obtenerConversaciones(cliente, startAfterDate);
-  console.log(`   → ${conversaciones.length} conversaciones encontradas`);
+  // PASO 1 — Obtener contactos recientes
+  const contactos = await obtenerContactosRecientes(cliente, startAfterDate);
+  console.log(`   → ${contactos.length} contactos encontrados en el período`);
 
   const alertasPorConversacion = [];
 
-  for (const conv of conversaciones) {
+  for (const contacto of contactos) {
+    // PASO 2 — Obtener conversación del contacto
+    const conv = await obtenerConversacionPorContacto(cliente, contacto.id);
+    if (!conv) continue;
+
+    // PASO 3 — Obtener mensajes de la conversación
     const mensajes = await obtenerMensajes(cliente, conv.id);
     if (mensajes.length === 0) continue;
 
@@ -438,14 +476,14 @@ async function auditarCliente(cliente) {
     if (alertaErrorPrompt) alertas.push(alertaErrorPrompt);
 
     if (alertas.length > 0) {
-      const contactoUrl = `https://app.gohighlevel.com/v2/location/${cliente.locationId}/contacts/${conv.contactId}`;
+      const contactoUrl = `https://app.gohighlevel.com/v2/location/${cliente.locationId}/contacts/${contacto.id}`;
       alertasPorConversacion.push({ contactoUrl, alertas });
     }
 
     await sleep(300);
   }
 
-  return { conversacionesAnalizadas: conversaciones.length, alertasPorConversacion };
+  return { conversacionesAnalizadas: contactos.length, alertasPorConversacion };
 }
 
 async function main() {
