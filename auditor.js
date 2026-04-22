@@ -51,6 +51,7 @@ const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_AURELIA;
 const CLIENTE_FILTRO = process.env.CLIENTE_FILTRO || '';
 const PERIODO_HORAS = parseInt(process.env.PERIODO_HORAS || '24', 10);
 const CONTACT_ID_TEST = process.env.CONTACT_ID_TEST || '';
+const OWNER_ASISTENTE_IA = 'O4EzeIK0KdeoXdlb7VIU'; // Owner ID del Asistente IA en GHL
 const MODELO_CLAUDE = 'claude-haiku-4-5-20251001';
 
 // Horario comercial Argentina (GMT-3)
@@ -235,7 +236,7 @@ const FRASES_DERIVACION = {
   ],
 };
 
-function detectarNoDerivacion(mensajes, nombreCliente) {
+function detectarNoDerivacion(mensajes, nombreCliente, conv) {
   const alertas = [];
   const frases = FRASES_DERIVACION[nombreCliente] || [];
 
@@ -247,11 +248,20 @@ function detectarNoDerivacion(mensajes, nombreCliente) {
     const usóDerivación = frases.some(f => texto.includes(f.toLowerCase()));
     if (!usóDerivación) continue;
 
-    // Verificar si hubo acción humana en las siguientes 24 horas
-    const tsDerivacion = msg.dateAdded;
+    // Verificar si el owner de la conversación sigue siendo el Asistente IA
+    // Si cambió de owner, significa que un humano tomó la conversación → no alertar
+    const ownerActual = conv.ownerId || conv.assignedTo || '';
+    if (ownerActual && ownerActual !== OWNER_ASISTENTE_IA) {
+      console.log(`   → Derivación detectada pero owner cambió a ${ownerActual} — no se alerta`);
+      continue;
+    }
+
+    // Verificar si hubo mensaje humano en las siguientes 24 horas
+    const tsDerivacion = new Date(msg.dateAdded || msg.createdAt || 0).getTime();
     const limite = tsDerivacion + UMBRAL_NO_DERIVACION_MS;
     const huboAccionHumana = mensajes.slice(i + 1).some(m => {
-      if (m.dateAdded > limite) return false;
+      const ts = new Date(m.dateAdded || m.createdAt || 0).getTime();
+      if (ts > limite) return false;
       if (m.direction === 'outbound' && m.messageType !== 'AI') return true;
       return false;
     });
@@ -260,7 +270,7 @@ function detectarNoDerivacion(mensajes, nombreCliente) {
       alertas.push({
         tipo: 'NO_DERIVACION',
         timestamp: timestampArgentina(tsDerivacion),
-        detalle: `El bot usó frase de derivación ("${texto.substring(0, 80)}...") pero no hubo acción humana en las siguientes 24 horas.`,
+        detalle: `El bot usó frase de derivación ("${texto.substring(0, 80)}...") pero el owner sigue siendo Asistente IA y no hubo acción humana en las siguientes 24 horas.`,
       });
     }
   }
@@ -514,7 +524,7 @@ async function auditarCliente(cliente) {
     const alertas = [];
 
     // Alerta 1 — No derivación
-    const alertasNoDerivacion = detectarNoDerivacion(mensajes, cliente.nombre);
+    const alertasNoDerivacion = detectarNoDerivacion(mensajes, cliente.nombre, conv);
     alertas.push(...alertasNoDerivacion);
 
     // Alerta 3 — IA no responde
@@ -526,7 +536,7 @@ async function auditarCliente(cliente) {
     if (alertaErrorPrompt) alertas.push(alertaErrorPrompt);
 
     if (alertas.length > 0) {
-      const contactoUrl = `https://app.soyaurelia.com/v2/location/${cliente.locationId}/contacts/${conv.contactId}`;
+      const contactoUrl = `https://app.soyaurelia.com/v2/location/${cliente.locationId}/contacts/detail/${conv.contactId}`;
       alertasPorConversacion.push({ contactoUrl, alertas });
     }
 
