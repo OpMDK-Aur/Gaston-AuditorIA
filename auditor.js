@@ -113,7 +113,6 @@ async function obtenerConversaciones(cliente, startAfterDate) {
       locationId: cliente.locationId,
       page: page.toString(),
       pageLimit: '100',
-      lastMessageType: 'TYPE_WHATSAPP',
     });
 
     console.log(`   → Request: GET /conversations/search?${params}`);
