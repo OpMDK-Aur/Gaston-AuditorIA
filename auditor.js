@@ -179,7 +179,20 @@ async function obtenerMensajes(cliente, conversationId) {
   }
 
   const data = await res.json();
-  const mensajes = data.messages || [];
+  console.log(`   → Estructura respuesta mensajes: ${JSON.stringify(Object.keys(data))}`);
+  
+  // GHL puede devolver messages directo o dentro de otro objeto
+  let mensajes = [];
+  if (Array.isArray(data.messages)) {
+    mensajes = data.messages;
+  } else if (data.messages && Array.isArray(data.messages.messages)) {
+    mensajes = data.messages.messages;
+  } else if (Array.isArray(data)) {
+    mensajes = data;
+  }
+
+  console.log(`   → Mensajes encontrados: ${mensajes.length}`);
+
   return mensajes.sort((a, b) => {
     const ta = new Date(a.dateAdded || a.createdAt || 0).getTime();
     const tb = new Date(b.dateAdded || b.createdAt || 0).getTime();
