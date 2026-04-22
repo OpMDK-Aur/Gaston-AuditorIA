@@ -10,43 +10,38 @@ const path = require('path');
 const CLIENTES = [
   {
     nombre: 'Ramé Travel',
-    apiKey: process.env.GHL_APIKEY_RAME,
     locationId: process.env.GHL_LOCID_RAME,
     promptFile: 'references/prompts/rame.md',
   },
   {
     nombre: 'ICS Salud',
-    apiKey: process.env.GHL_APIKEY_ICS,
     locationId: process.env.GHL_LOCID_ICS,
     promptFile: 'references/prompts/ics.md',
   },
   {
     nombre: 'Nobis',
-    apiKey: process.env.GHL_APIKEY_NOBIS,
     locationId: process.env.GHL_LOCID_NOBIS,
     promptFile: 'references/prompts/nobis.md',
   },
   {
     nombre: 'Sistemas de Cargas',
-    apiKey: process.env.GHL_APIKEY_SISTCARGAS,
     locationId: process.env.GHL_LOCID_SISTCARGAS,
     promptFile: 'references/prompts/sistcargas.md',
   },
   {
     nombre: 'Alambrados Patagonia',
-    apiKey: process.env.GHL_APIKEY_ALAMBRADOS,
     locationId: process.env.GHL_LOCID_ALAMBRADOS,
     promptFile: 'references/prompts/alambrados.md',
   },
   {
     nombre: 'MDK',
-    apiKey: process.env.GHL_APIKEY_MDK,
     locationId: process.env.GHL_LOCID_MDK,
     promptFile: 'references/prompts/mdk.md',
   },
 ];
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const GHL_AGENCY_APIKEY = process.env.GHL_AGENCY_APIKEY;
 const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_AURELIA;
 const CLIENTE_FILTRO = process.env.CLIENTE_FILTRO || '';
 const PERIODO_HORAS = parseInt(process.env.PERIODO_HORAS || '24', 10);
@@ -89,49 +84,57 @@ function leerArchivoReferencia(filePath) {
 
 // ─── API GHL ─────────────────────────────────────────────────────────────────
 
-function ghlHeaders(cliente) {
+function ghlHeaders() {
   return {
-    Authorization: `Bearer ${cliente.apiKey}`,
+    Authorization: `Bearer ${GHL_AGENCY_APIKEY}`,
     Version: '2021-07-28',
     'Content-Type': 'application/json',
   };
 }
 
+// STEP 1 — Buscar contactos recientes via POST /contacts/search
 async function obtenerContactosRecientes(cliente, startAfterDate) {
   const contactos = [];
   let page = 1;
 
   while (true) {
-    const params = new URLSearchParams({
+    const body = {
       locationId: cliente.locationId,
-      limit: '100',
-      page: page.toString(),
+      pageLimit: 100,
+      page: page,
       sortBy: 'date_added',
       sortOrder: 'desc',
-    });
+    };
 
     const res = await fetch(
-      `https://services.leadconnectorhq.com/contacts/?${params}`,
-      { headers: ghlHeaders(cliente) }
+      'https://services.leadconnectorhq.com/contacts/search',
+      {
+        method: 'POST',
+        headers: ghlHeaders(),
+        body: JSON.stringify(body),
+      }
     );
 
     if (!res.ok) {
-      console.error(`[${cliente.nombre}] Error al obtener contactos: ${res.status}`);
-      const body = await res.text();
-      console.error(`  Detalle: ${body}`);
+      const detalle = await res.text();
+      console.error(`[${cliente.nombre}] Error al buscar contactos: ${res.status}`);
+      console.error(`  Detalle: ${detalle}`);
       break;
     }
 
     const data = await res.json();
-    const items = (data.contacts || []).filter(c => {
+    const todos = data.contacts || [];
+
+    // Filtrar por período
+    const recientes = todos.filter(c => {
       const fecha = new Date(c.dateAdded || c.createdAt || 0).getTime();
       return fecha >= startAfterDate;
     });
 
-    contactos.push(...items);
+    contactos.push(...recientes);
 
-    // Si la última página no trajo items dentro del período, terminamos
-    if (!data.contacts || data.contacts.length < 100 || items.length === 0) break;
+    // Si ninguno del lote está en el período o es la última página, terminamos
+    if (todos.length < 100 || recientes.length === 0) break;
     page++;
     await sleep(300);
   }
@@ -139,6 +142,7 @@ async function obtenerContactosRecientes(cliente, startAfterDate) {
   return contactos;
 }
 
+// STEP 2 — Obtener conversación por contactId
 async function obtenerConversacionPorContacto(cliente, contactId) {
   const params = new URLSearchParams({
     locationId: cliente.locationId,
@@ -147,11 +151,16 @@ async function obtenerConversacionPorContacto(cliente, contactId) {
 
   const res = await fetch(
     `https://services.leadconnectorhq.com/conversations/search?${params}`,
-    { headers: ghlHeaders(cliente) }
+    {
+      method: 'GET',
+      headers: ghlHeaders(),
+    }
   );
 
   if (!res.ok) {
+    const detalle = await res.text();
     console.error(`[${cliente.nombre}] Error al obtener conversación del contacto ${contactId}: ${res.status}`);
+    console.error(`  Detalle: ${detalle}`);
     return null;
   }
 
@@ -160,14 +169,20 @@ async function obtenerConversacionPorContacto(cliente, contactId) {
   return conversaciones.length > 0 ? conversaciones[0] : null;
 }
 
+// STEP 3 — Obtener mensajes de una conversación
 async function obtenerMensajes(cliente, conversationId) {
   const res = await fetch(
     `https://services.leadconnectorhq.com/conversations/${conversationId}/messages`,
-    { headers: ghlHeaders(cliente) }
+    {
+      method: 'GET',
+      headers: ghlHeaders(),
+    }
   );
 
   if (!res.ok) {
+    const detalle = await res.text();
     console.error(`[${cliente.nombre}] Error al obtener mensajes de ${conversationId}: ${res.status}`);
+    console.error(`  Detalle: ${detalle}`);
     return [];
   }
 
