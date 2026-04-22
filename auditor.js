@@ -1,4 +1,4 @@
-/// auditor.js — Aurelia GHL Auditor
+// auditor.js — Aurelia GHL Auditor
 // Corre diariamente a las 9:00 AM Argentina (GMT-3)
 // Llama a la API de GHL para obtener conversaciones y las analiza con Claude
 
@@ -106,6 +106,8 @@ async function obtenerConversaciones(cliente, startAfterDate) {
   const fechaDesde = new Date(startAfterDate).toISOString();
   const fechaHasta = new Date().toISOString();
 
+  console.log(`   → Buscando conversaciones desde ${fechaDesde} hasta ${fechaHasta}`);
+
   while (true) {
     const params = new URLSearchParams({
       locationId: cliente.locationId,
@@ -114,6 +116,8 @@ async function obtenerConversaciones(cliente, startAfterDate) {
       lastMessageType: 'TYPE_WHATSAPP',
     });
 
+    console.log(`   → Request: GET /conversations/search?${params}`);
+
     const res = await fetch(
       `https://services.leadconnectorhq.com/conversations/search?${params}`,
       {
@@ -121,6 +125,8 @@ async function obtenerConversaciones(cliente, startAfterDate) {
         headers: ghlHeaders(cliente.apiKey),
       }
     );
+
+    console.log(`   → Status: ${res.status}`);
 
     if (!res.ok) {
       const detalle = await res.text();
@@ -131,6 +137,12 @@ async function obtenerConversaciones(cliente, startAfterDate) {
 
     const data = await res.json();
     const todos = data.conversations || [];
+    console.log(`   → Total traídas por GHL (sin filtrar): ${todos.length}`);
+
+    if (todos.length > 0) {
+      const primera = todos[0];
+      console.log(`   → Primera conversación: id=${primera.id} lastMessageDate=${primera.lastMessageDate} dateAdded=${primera.dateAdded}`);
+    }
 
     // Filtrar por período
     const recientes = todos.filter(c => {
@@ -138,6 +150,7 @@ async function obtenerConversaciones(cliente, startAfterDate) {
       return fecha >= startAfterDate;
     });
 
+    console.log(`   → Conversaciones dentro del período: ${recientes.length}`);
     conversaciones.push(...recientes);
 
     // Si ninguna del lote está en el período o es la última página, terminamos
