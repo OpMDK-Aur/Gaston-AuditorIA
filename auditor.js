@@ -271,25 +271,53 @@ function detectarNoDerivacion(mensajes, nombreCliente) {
 function detectarIANoResponde(mensajes) {
   const alertas = [];
 
-  for (let i = 0; i < mensajes.length; i++) {
-    const msg = mensajes[i];
-    if (msg.direction !== 'inbound') continue;
+  // Verificar si hay AL MENOS UN mensaje outbound en toda la conversación
+  const hayRespuestaBot = mensajes.some(m =>
+    m.direction === 'outbound' ||
+    m.messageType === 'TYPE_BOT' ||
+    m.type === 'outbound' ||
+    m.source === 'bot' ||
+    m.fromName === 'Asistente IA' ||
+    m.fromName === 'bot'
+  );
 
-    // Buscar la siguiente respuesta del bot
-    const siguiente = mensajes.slice(i + 1).find(m => m.direction === 'outbound');
+  // Solo analizar gaps si hay mensajes inbound Y outbound
+  const hayMensajesInbound = mensajes.some(m => m.direction === 'inbound' || m.type === 'inbound');
 
-    if (!siguiente) {
-      // El bot nunca respondió este mensaje
+  if (hayMensajesInbound && !hayRespuestaBot) {
+    // Verificar si el último mensaje es inbound (el bot nunca respondió)
+    const ultimoMensaje = mensajes[mensajes.length - 1];
+    const ultimoEsInbound = ultimoMensaje.direction === 'inbound' || ultimoMensaje.type === 'inbound';
+    if (ultimoEsInbound) {
       alertas.push({
         tipo: 'IA_NO_RESPONDE',
-        timestamp: timestampArgentina(msg.dateAdded),
-        detalle: 'El usuario envió un mensaje y el bot nunca respondió en toda la conversación.',
+        timestamp: timestampArgentina(new Date(ultimoMensaje.dateAdded || ultimoMensaje.createdAt || 0).getTime()),
+        detalle: 'El usuario envió mensajes y el bot no tiene ninguna respuesta registrada en la conversación.',
       });
-      break;
     }
+    return alertas;
+  }
 
-    const gap = siguiente.dateAdded - msg.dateAdded;
-    const umbral = esHorarioComercial(msg.dateAdded)
+  // Analizar gaps entre inbound y siguiente outbound
+  for (let i = 0; i < mensajes.length; i++) {
+    const msg = mensajes[i];
+    const esInbound = msg.direction === 'inbound' || msg.type === 'inbound';
+    if (!esInbound) continue;
+
+    const tsMsg = new Date(msg.dateAdded || msg.createdAt || 0).getTime();
+
+    // Buscar la siguiente respuesta outbound
+    const siguiente = mensajes.slice(i + 1).find(m =>
+      m.direction === 'outbound' ||
+      m.type === 'outbound' ||
+      m.messageType === 'TYPE_BOT'
+    );
+
+    if (!siguiente) continue; // Si no hay siguiente outbound pero hayRespuestaBot ya lo cubre arriba
+
+    const tsSiguiente = new Date(siguiente.dateAdded || siguiente.createdAt || 0).getTime();
+    const gap = tsSiguiente - tsMsg;
+    const umbral = esHorarioComercial(tsMsg)
       ? UMBRAL_COMERCIAL_MS
       : UMBRAL_FUERA_HORARIO_MS;
 
@@ -297,7 +325,7 @@ function detectarIANoResponde(mensajes) {
       const minutos = Math.round(gap / 60000);
       alertas.push({
         tipo: 'IA_NO_RESPONDE',
-        timestamp: timestampArgentina(msg.dateAdded),
+        timestamp: timestampArgentina(tsMsg),
         detalle: `El bot tardó ${minutos} minutos en responder (umbral: ${umbral / 60000} min en ese horario).`,
       });
     }
@@ -498,7 +526,7 @@ async function auditarCliente(cliente) {
     if (alertaErrorPrompt) alertas.push(alertaErrorPrompt);
 
     if (alertas.length > 0) {
-      const contactoUrl = `https://app.gohighlevel.com/v2/location/${cliente.locationId}/contacts/${conv.contactId}`;
+      const contactoUrl = `https://app.soyaurelia.com/v2/location/${cliente.locationId}/contacts/${conv.contactId}`;
       alertasPorConversacion.push({ contactoUrl, alertas });
     }
 
