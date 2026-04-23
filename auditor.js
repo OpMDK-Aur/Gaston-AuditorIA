@@ -458,23 +458,23 @@ function construirMensajeCliente(cliente, conversacionesAnalizadas, alertasPorCo
 
   if (totalAlertas === 0) {
     return (
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `📋 **REPORTE DIARIO — ${cliente.nombre}**\n` +
-      `📅 ${fecha}\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `✅ Conversaciones analizadas: ${conversacionesAnalizadas}\n` +
+      `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `📋 REPORTE DIARIO — ${cliente.nombre}\n` +
+      `Fecha: ${fecha}\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `Conversaciones analizadas: ${conversacionesAnalizadas}\n` +
       `🟢 Sin alertas críticas. Todo funcionando correctamente.\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
     );
   }
 
   let msg =
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `📋 **REPORTE DIARIO — ${cliente.nombre}**\n` +
-    `📅 ${fecha}\n` +
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `✅ Conversaciones analizadas: ${conversacionesAnalizadas}\n` +
-    `🔴 Alertas críticas detectadas: ${totalAlertas}\n\n`;
+    `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `📋 REPORTE DIARIO — ${cliente.nombre}\n` +
+    `Fecha: ${fecha}\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `Conversaciones analizadas: ${conversacionesAnalizadas}\n` +
+    `🔴 Alertas críticas: ${totalAlertas}\n\n`;
 
   for (const { contactoUrl, alertas } of alertasPorConversacion) {
     for (const alerta of alertas) {
@@ -486,10 +486,11 @@ function construirMensajeCliente(cliente, conversacionesAnalizadas, alertasPorCo
       }[alerta.tipo] || alerta.tipo;
 
       msg +=
-        `${emoji} **${nombre}**\n` +
-        `🔗 Contacto: ${contactoUrl}\n` +
-        `🕐 Timestamp: ${alerta.timestamp}\n` +
-        `📝 ${alerta.detalle}\n\n`;
+        `${emoji} ${nombre}\n` +
+        `Contacto: ${contactoUrl}\n` +
+        `Hora: ${alerta.timestamp}\n` +
+        `Detalle: ${alerta.detalle}\n` +
+        `- - - - - - - - - - - - - - - - - - - -\n`;
     }
   }
 
@@ -597,21 +598,21 @@ async function main() {
   const hora = new Date().toLocaleTimeString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' });
 
   let resumen =
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `📊 **RESUMEN GENERAL — AURELIA**\n` +
-    `📅 ${fecha} | 🕘 ${hora}\n` +
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `🔍 Total conversaciones auditadas: ${totalConversaciones}\n` +
+    `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `📊 RESUMEN GENERAL — AURELIA\n` +
+    `Fecha y hora: ${fecha} | ${hora}\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `Total conversaciones auditadas: ${totalConversaciones}\n` +
     `🔴 Total alertas críticas: ${totalAlertas}\n` +
     `🟢 Clientes sin alertas: ${clientesAfiltrar.length - clientesConAlertas.length}\n`;
 
   if (clientesConAlertas.length > 0) {
     resumen += `\n⚠️ Requieren atención: ${clientesConAlertas.join(' | ')}\n`;
   } else {
-    resumen += `\n✅ Auditoría completada sin incidencias.\n`;
+    resumen += `\nAuditoría completada sin incidencias.\n`;
   }
 
-  resumen += `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+  resumen += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
   await enviarDiscord(resumen);
 
   console.log('\n✅ Auditoría finalizada.');
