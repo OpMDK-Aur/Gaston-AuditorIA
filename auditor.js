@@ -459,7 +459,7 @@ function construirMensajeCliente(cliente, conversacionesAnalizadas, alertasPorCo
   if (totalAlertas === 0) {
     return (
       `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `📋 REPORTE DIARIO — ${cliente.nombre}\n` +
+      `📋 **REPORTE DIARIO — ${cliente.nombre.toUpperCase()}**\n` +
       `Fecha: ${fecha}\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `Conversaciones analizadas: ${conversacionesAnalizadas}\n` +
@@ -470,7 +470,7 @@ function construirMensajeCliente(cliente, conversacionesAnalizadas, alertasPorCo
 
   let msg =
     `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `📋 REPORTE DIARIO — ${cliente.nombre}\n` +
+    `📋 **REPORTE DIARIO — ${cliente.nombre.toUpperCase()}**\n` +
     `Fecha: ${fecha}\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
     `Conversaciones analizadas: ${conversacionesAnalizadas}\n` +
@@ -615,7 +615,7 @@ async function main() {
   resumen += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
   await enviarDiscord(resumen);
 
-  console.log('\n Auditoría finalizada.');
+  console.log('\n✅ Auditoría finalizada.');
   console.log(`   Conversaciones: ${totalConversaciones} | Alertas: ${totalAlertas}`);
 }
 
