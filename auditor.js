@@ -615,7 +615,7 @@ async function main() {
   resumen += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
   await enviarDiscord(resumen);
 
-  console.log('\n✅ Auditoría finalizada.');
+  console.log('\n Auditoría finalizada.');
   console.log(`   Conversaciones: ${totalConversaciones} | Alertas: ${totalAlertas}`);
 }
 
