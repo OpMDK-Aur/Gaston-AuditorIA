@@ -478,6 +478,75 @@ function construirMensajeCliente(cliente, conversacionesAnalizadas, alertasPorCo
   return msg.trim();
 }
 
+
+// ─── OBTENER ESTADO DE CONVERSACIÓN VÍA CUSTOM FIELDS ────────────────────────
+
+async function obtenerEstadoConversacion(cliente, contactId) {
+  try {
+    // Llamado 1 — Obtener datos del contacto
+    const resContacto = await fetch(
+      `https://services.leadconnectorhq.com/contacts/${contactId}`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${cliente.apiKey}`,
+          Version: '2021-04-15',
+          Accept: 'application/json',
+        },
+      }
+    );
+    if (!resContacto.ok) return null;
+    const dataContacto = await resContacto.json();
+    const contactFields = dataContacto.contact?.customFields || [];
+
+    // Llamado 2 — Obtener definiciones de custom fields de la location
+    const resFields = await fetch(
+      `https://services.leadconnectorhq.com/locations/${cliente.locationId}/customFields`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${cliente.apiKey}`,
+          Version: '2021-04-15',
+          Accept: 'application/json',
+        },
+      }
+    );
+    if (!resFields.ok) return null;
+    const dataFields = await resFields.json();
+    const customFieldDefs = dataFields.customFields || [];
+
+    // Buscar el campo — contemplar ambas variantes (con y sin tilde)
+    const posiblesKeys = [
+      'contact.estado_de_la_conversacin',   // con tilde (ó → in)
+      'contact.estado_de_la_conversacion',  // sin tilde
+    ];
+
+    let value = null;
+    for (const fieldKey of posiblesKeys) {
+      const fieldDef = customFieldDefs.find(f => f.fieldKey === fieldKey);
+      if (fieldDef) {
+        const fieldValue = contactFields.find(f => f.id === fieldDef.id);
+        value = fieldValue?.value ?? null;
+        if (value) break;
+      }
+    }
+
+    return value ? value.toUpperCase() : null;
+
+  } catch (e) {
+    console.error(`   → Error al obtener estado de conversación: ${e.message}`);
+    return null;
+  }
+}
+
+// Estados que indican que la IA descalificó correctamente — no alertar por NO DERIVACIÓN
+const ESTADOS_DESCALIFICADOS = [
+  'DESCALIFICADO',
+  'NO CALIFICA',
+  'NO CONTESTA',
+  'RECONTACTO',
+];
+
 // ─── FLUJO PRINCIPAL ──────────────────────────────────────────────────────────
 
 async function auditarCliente(cliente) {
@@ -503,11 +572,23 @@ async function auditarCliente(cliente) {
     const mensajes = await obtenerMensajes(cliente, conv.id);
     if (mensajes.length === 0) continue;
 
+    // Obtener estado de la conversación via custom fields
+    const contactId = conv.contactId || conv.id;
+    const estadoConv = await obtenerEstadoConversacion(cliente, contactId);
+    console.log(`   → Estado conversación contacto ${contactId}: ${estadoConv || 'sin estado'}`);
+
+    // Si el estado indica descalificación correcta → saltar NO DERIVACIÓN
+    const estaDescalificado = estadoConv && ESTADOS_DESCALIFICADOS.some(e => estadoConv.includes(e));
+
     const alertas = [];
 
-    // Alerta 1 — No derivación
-    const alertasNoDerivacion = detectarNoDerivacion(mensajes, cliente.nombre, conv);
-    alertas.push(...alertasNoDerivacion);
+    // Alerta 1 — No derivación (solo si no está descalificado)
+    if (!estaDescalificado) {
+      const alertasNoDerivacion = detectarNoDerivacion(mensajes, cliente.nombre, conv);
+      alertas.push(...alertasNoDerivacion);
+    } else {
+      console.log(`   → Contacto descalificado (${estadoConv}) — se omite alerta NO DERIVACIÓN`);
+    }
 
     // Alerta 3 — IA no responde
     const alertasNoResponde = detectarIANoResponde(mensajes, conv);
