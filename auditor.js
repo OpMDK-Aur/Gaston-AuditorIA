@@ -307,7 +307,6 @@ function detectarIANoResponde(mensajes, conv) {
       timestamp: timestampArgentina(tsUltimo),
       detalle: `El último mensaje es del usuario (inbound) y el Asistente IA no respondió. Tiempo sin respuesta: ${minutos} minutos.`,
     });
-    }
   }
 
   return alertas;
