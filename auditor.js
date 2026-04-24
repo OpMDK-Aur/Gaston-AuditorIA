@@ -234,84 +234,150 @@ const FRASES_DERIVACION = {
     'se van a contactar lo más rápido posible',
     'un vendedor se va a comunicar a la brevedad',
   ],
+  'MDK': [
+    'te derivo con un asesor',
+    'dale, ahí te conecto con alguien del equipo',
+    'ya paso tus datos así te cuentan bien cómo seguir',
+    'ahora te paso con alguien que te pueda armar bien la estrategia',
+    'te parece si te derivo con un asesor',
+  ],
 };
 
-function detectarNoDerivacion(mensajes, nombreCliente, conv) {
-  const alertas = [];
+function ultimoMensajeEsInbound(mensajes) {
+  const ultimo = mensajes[mensajes.length - 1];
+  if (!ultimo) return false;
+  return ultimo.direction === 'inbound' || ultimo.type === 'inbound';
+}
+
+function botDijoQueDerivó(mensajes, nombreCliente) {
   const frases = FRASES_DERIVACION[nombreCliente] || [];
+  return mensajes.some(m => {
+    if (m.direction !== 'outbound') return false;
+    const texto = (m.body || '').toLowerCase();
+    return frases.some(f => texto.includes(f.toLowerCase()));
+  });
+}
 
-  for (let i = 0; i < mensajes.length; i++) {
-    const msg = mensajes[i];
-    if (msg.direction !== 'outbound') continue;
+function esOwnerAsistenteIA(conv) {
+  const owner = conv.ownerId || conv.assignedTo || '';
+  return !owner || owner === OWNER_ASISTENTE_IA;
+}
 
-    const texto = (msg.body || '').toLowerCase();
-    const usóDerivación = frases.some(f => texto.includes(f.toLowerCase()));
-    if (!usóDerivación) continue;
+// ─── NUEVA LÓGICA DE ALERTAS POR ESTADO ──────────────────────────────────────
 
-    // Verificar si el owner de la conversación sigue siendo el Asistente IA
-    // Si cambió de owner, significa que un humano tomó la conversación → no alertar
-    const ownerActual = conv.ownerId || conv.assignedTo || '';
-    if (ownerActual && ownerActual !== OWNER_ASISTENTE_IA) {
-      console.log(`   → Derivación detectada pero owner cambió a ${ownerActual} — no se alerta`);
-      continue;
-    }
+async function detectarAlertas(mensajes, conv, cliente, estadoConv, promptReferencia) {
+  const alertas = [];
+  const estado = (estadoConv || '').toUpperCase().trim();
+  const ownerEsIA = esOwnerAsistenteIA(conv);
+  const ultimoEsInbound = ultimoMensajeEsInbound(mensajes);
+  const dijoQueDerivó = botDijoQueDerivó(mensajes, cliente.nombre);
 
-    // Verificar si hubo mensaje humano en las siguientes 24 horas
-    const tsDerivacion = new Date(msg.dateAdded || msg.createdAt || 0).getTime();
-    const limite = tsDerivacion + UMBRAL_NO_DERIVACION_MS;
-    const huboAccionHumana = mensajes.slice(i + 1).some(m => {
-      const ts = new Date(m.dateAdded || m.createdAt || 0).getTime();
-      if (ts > limite) return false;
-      if (m.direction === 'outbound' && m.messageType !== 'AI') return true;
-      return false;
+  console.log(`   → Estado: ${estado || 'sin estado'} | Owner IA: ${ownerEsIA} | Último inbound: ${ultimoEsInbound} | Dijo que derivó: ${dijoQueDerivó}`);
+
+  // ── DESCALIFICADO ──────────────────────────────────────────────────────────
+  // Si está DESCALIFICADO, verificar con Claude si la descalificación fue correcta
+  if (estado === 'DESCALIFICADO') {
+    const transcripcion = mensajes
+      .map(m => `[${m.direction === 'inbound' ? 'USUARIO' : 'BOT'}] ${m.body || ''}`)
+      .join('\n');
+
+    const resClaudeDescalif = await callClaudeConRetry({
+      model: MODELO_CLAUDE,
+      max_tokens: 500,
+      messages: [{
+        role: 'user',
+        content: `Sos el Auditor de Aurelia. Analizá esta conversación del bot de "${cliente.nombre}".
+
+El contacto fue marcado como DESCALIFICADO. Tu tarea es determinar si esa descalificación fue CORRECTA o INCORRECTA según el prompt del bot.
+
+## Prompt de referencia:
+${promptReferencia}
+
+## Conversación:
+${transcripcion}
+
+Respondé SOLO en JSON sin texto adicional:
+{"descalificacion_correcta": true o false, "motivo": "explicación breve"}`,
+      }],
     });
 
-    if (!huboAccionHumana) {
+    if (resClaudeDescalif) {
+      const data = await resClaudeDescalif.json();
+      const texto = data.content?.[0]?.text || '{}';
+      try {
+        const resultado = JSON.parse(texto.replace(/\`\`\`json|\`\`\`/g, '').trim());
+        if (!resultado.descalificacion_correcta) {
+          alertas.push({
+            tipo: 'ERROR_DE_DESCALIFICACION',
+            timestamp: timestampArgentina(Date.now()),
+            detalle: `El contacto fue marcado como DESCALIFICADO pero según el prompt debería haber sido derivado. Motivo: ${resultado.motivo}`,
+          });
+        } else {
+          console.log(`   → Descalificación correcta: ${resultado.motivo}`);
+        }
+      } catch(e) {
+        console.error('   → Error al parsear respuesta de Claude para descalificación');
+      }
+    }
+    return alertas;
+  }
+
+  // ── CONVERSACIÓN EN CURSO ──────────────────────────────────────────────────
+  // El último mensaje debe ser del bot (outbound) y NO debe haber dicho que derivó
+  if (estado === 'CONVERSACIÓN EN CURSO' || estado === 'CONVERSACION EN CURSO') {
+    if (dijoQueDerivó && ownerEsIA) {
       alertas.push({
-        tipo: 'NO_DERIVACION',
-        timestamp: timestampArgentina(tsDerivacion),
-        detalle: `El bot usó frase de derivación ("${texto.substring(0, 80)}...") pero el owner sigue siendo Asistente IA y no hubo acción humana en las siguientes 24 horas.`,
+        tipo: 'ERROR_DE_DERIVACION',
+        timestamp: timestampArgentina(Date.now()),
+        detalle: 'El bot informó que derivó pero la conversación sigue en estado CONVERSACIÓN EN CURSO y el owner sigue siendo Asistente IA.',
+      });
+    }
+    return alertas;
+  }
+
+  // ── DERIVADO ──────────────────────────────────────────────────────────────
+  // Si está DERIVADO pero el owner sigue siendo Asistente IA o no tiene owner
+  if (estado === 'DERIVADO') {
+    if (ownerEsIA) {
+      alertas.push({
+        tipo: 'ERROR_DE_DERIVACION',
+        timestamp: timestampArgentina(Date.now()),
+        detalle: 'El estado es DERIVADO pero el owner sigue siendo Asistente IA o no fue asignado a un humano.',
+      });
+    }
+    return alertas;
+  }
+
+  // ── RECONTACTO / NO CONTESTA ──────────────────────────────────────────────
+  // Si el último mensaje es inbound y el owner sigue siendo Asistente IA
+  if (estado === 'RECONTACTO' || estado === 'NO CONTESTA') {
+    if (ultimoEsInbound && ownerEsIA) {
+      alertas.push({
+        tipo: 'ERROR_DE_RECONTACTO',
+        timestamp: timestampArgentina(Date.now()),
+        detalle: `El estado es ${estado}, el último mensaje es del usuario (inbound) y el owner sigue siendo Asistente IA. Requiere recontacto manual.`,
+      });
+    }
+    return alertas;
+  }
+
+  // ── SIN ESTADO DEFINIDO — lógica original ─────────────────────────────────
+  if (ultimoEsInbound && ownerEsIA) {
+    const tsUltimo = new Date(mensajes[mensajes.length-1].dateAdded || 0).getTime();
+    const umbral = esHorarioComercial(tsUltimo) ? UMBRAL_COMERCIAL_MS : UMBRAL_FUERA_HORARIO_MS;
+    const gap = Date.now() - tsUltimo;
+    if (gap > umbral) {
+      const minutos = Math.round(gap / 60000);
+      alertas.push({
+        tipo: 'IA_NO_RESPONDE',
+        timestamp: timestampArgentina(tsUltimo),
+        detalle: `El último mensaje es del usuario y el Asistente IA no respondió. Tiempo sin respuesta: ${minutos} minutos.`,
       });
     }
   }
 
   return alertas;
 }
-
-function detectarIANoResponde(mensajes, conv) {
-  const alertas = [];
-
-  // Condición 1: el owner debe ser el Asistente IA
-  const ownerActual = conv.ownerId || conv.assignedTo || '';
-  if (ownerActual && ownerActual !== OWNER_ASISTENTE_IA) {
-    return alertas; // No es owner Asistente IA → no alertar
-  }
-
-  // Condición 2: el último mensaje debe ser inbound
-  const ultimoMensaje = mensajes[mensajes.length - 1];
-  if (!ultimoMensaje) return alertas;
-
-  const ultimoEsInbound = ultimoMensaje.direction === 'inbound' || ultimoMensaje.type === 'inbound';
-  if (!ultimoEsInbound) return alertas; // Último mensaje no es inbound → no alertar
-
-  // Ambas condiciones cumplidas → alerta
-  const tsUltimo = new Date(ultimoMensaje.dateAdded || ultimoMensaje.createdAt || 0).getTime();
-  const umbral = esHorarioComercial(tsUltimo) ? UMBRAL_COMERCIAL_MS : UMBRAL_FUERA_HORARIO_MS;
-  const ahora = Date.now();
-  const gap = ahora - tsUltimo;
-
-  if (gap > umbral) {
-    const minutos = Math.round(gap / 60000);
-    alertas.push({
-      tipo: 'IA_NO_RESPONDE',
-      timestamp: timestampArgentina(tsUltimo),
-      detalle: `El último mensaje es del usuario (inbound) y el Asistente IA no respondió. Tiempo sin respuesta: ${minutos} minutos.`,
-    });
-  }
-
-  return alertas;
-}
-
 
 // ─── LLAMADA A CLAUDE CON RETRY AUTOMÁTICO ───────────────────────────────────
 
@@ -580,21 +646,11 @@ async function auditarCliente(cliente) {
     // Si el estado indica descalificación correcta → saltar NO DERIVACIÓN
     const estaDescalificado = estadoConv && ESTADOS_DESCALIFICADOS.some(e => estadoConv.includes(e));
 
-    const alertas = [];
+    // Nueva lógica unificada por estado
+    const promptReferencia = leerArchivoReferencia(cliente.promptFile);
+    const alertas = await detectarAlertas(mensajes, conv, cliente, estadoConv, promptReferencia);
 
-    // Alerta 1 — No derivación (solo si no está descalificado)
-    if (!estaDescalificado) {
-      const alertasNoDerivacion = detectarNoDerivacion(mensajes, cliente.nombre, conv);
-      alertas.push(...alertasNoDerivacion);
-    } else {
-      console.log(`   → Contacto descalificado (${estadoConv}) — se omite alerta NO DERIVACIÓN`);
-    }
-
-    // Alerta 3 — IA no responde
-    const alertasNoResponde = detectarIANoResponde(mensajes, conv);
-    alertas.push(...alertasNoResponde);
-
-    // Alerta 2 — Error de prompt (solo si hay mensajes suficientes)
+    // Alerta 2 — Error de prompt con Claude (complementaria)
     const alertaErrorPrompt = await detectarErrorDePrompt(mensajes, cliente);
     if (alertaErrorPrompt) alertas.push(alertaErrorPrompt);
 
@@ -638,11 +694,17 @@ async function main() {
     // Un embed por cada alerta encontrada
     for (const { contactoUrl, alertas } of alertasPorConversacion) {
       for (const alerta of alertas) {
-        const colorEmbed = alerta.tipo === 'ERROR_DE_PROMPT' ? 16776960 : 15158332;
+        const colorEmbed = {
+          ERROR_DE_PROMPT: 16776960,        // amarillo
+          ERROR_DE_RECONTACTO: 16753920,    // naranja
+        }[alerta.tipo] || 15158332;         // rojo por defecto
         const titulo = {
           NO_DERIVACION: '⚠️ No Derivación',
           ERROR_DE_PROMPT: '🟡 Error de Prompt',
           IA_NO_RESPONDE: '🚨 IA No Responde',
+          ERROR_DE_DERIVACION: '🔴 Error de Derivación',
+          ERROR_DE_DESCALIFICACION: '🔴 Error de Descalificación',
+          ERROR_DE_RECONTACTO: '🔔 Error de Recontacto',
         }[alerta.tipo] || alerta.tipo;
 
         await enviarDiscordEmbed({
