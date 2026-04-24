@@ -278,66 +278,35 @@ function detectarNoDerivacion(mensajes, nombreCliente, conv) {
   return alertas;
 }
 
-function detectarIANoResponde(mensajes) {
+function detectarIANoResponde(mensajes, conv) {
   const alertas = [];
 
-  // Verificar si hay AL MENOS UN mensaje outbound en toda la conversación
-  const hayRespuestaBot = mensajes.some(m =>
-    m.direction === 'outbound' ||
-    m.messageType === 'TYPE_BOT' ||
-    m.type === 'outbound' ||
-    m.source === 'bot' ||
-    m.fromName === 'Asistente IA' ||
-    m.fromName === 'bot'
-  );
-
-  // Solo analizar gaps si hay mensajes inbound Y outbound
-  const hayMensajesInbound = mensajes.some(m => m.direction === 'inbound' || m.type === 'inbound');
-
-  if (hayMensajesInbound && !hayRespuestaBot) {
-    // Verificar si el último mensaje es inbound (el bot nunca respondió)
-    const ultimoMensaje = mensajes[mensajes.length - 1];
-    const ultimoEsInbound = ultimoMensaje.direction === 'inbound' || ultimoMensaje.type === 'inbound';
-    if (ultimoEsInbound) {
-      alertas.push({
-        tipo: 'IA_NO_RESPONDE',
-        timestamp: timestampArgentina(new Date(ultimoMensaje.dateAdded || ultimoMensaje.createdAt || 0).getTime()),
-        detalle: 'El usuario envió mensajes y el bot no tiene ninguna respuesta registrada en la conversación.',
-      });
-    }
-    return alertas;
+  // Condición 1: el owner debe ser el Asistente IA
+  const ownerActual = conv.ownerId || conv.assignedTo || '';
+  if (ownerActual && ownerActual !== OWNER_ASISTENTE_IA) {
+    return alertas; // No es owner Asistente IA → no alertar
   }
 
-  // Analizar gaps entre inbound y siguiente outbound
-  for (let i = 0; i < mensajes.length; i++) {
-    const msg = mensajes[i];
-    const esInbound = msg.direction === 'inbound' || msg.type === 'inbound';
-    if (!esInbound) continue;
+  // Condición 2: el último mensaje debe ser inbound
+  const ultimoMensaje = mensajes[mensajes.length - 1];
+  if (!ultimoMensaje) return alertas;
 
-    const tsMsg = new Date(msg.dateAdded || msg.createdAt || 0).getTime();
+  const ultimoEsInbound = ultimoMensaje.direction === 'inbound' || ultimoMensaje.type === 'inbound';
+  if (!ultimoEsInbound) return alertas; // Último mensaje no es inbound → no alertar
 
-    // Buscar la siguiente respuesta outbound
-    const siguiente = mensajes.slice(i + 1).find(m =>
-      m.direction === 'outbound' ||
-      m.type === 'outbound' ||
-      m.messageType === 'TYPE_BOT'
-    );
+  // Ambas condiciones cumplidas → alerta
+  const tsUltimo = new Date(ultimoMensaje.dateAdded || ultimoMensaje.createdAt || 0).getTime();
+  const umbral = esHorarioComercial(tsUltimo) ? UMBRAL_COMERCIAL_MS : UMBRAL_FUERA_HORARIO_MS;
+  const ahora = Date.now();
+  const gap = ahora - tsUltimo;
 
-    if (!siguiente) continue; // Si no hay siguiente outbound pero hayRespuestaBot ya lo cubre arriba
-
-    const tsSiguiente = new Date(siguiente.dateAdded || siguiente.createdAt || 0).getTime();
-    const gap = tsSiguiente - tsMsg;
-    const umbral = esHorarioComercial(tsMsg)
-      ? UMBRAL_COMERCIAL_MS
-      : UMBRAL_FUERA_HORARIO_MS;
-
-    if (gap > umbral) {
-      const minutos = Math.round(gap / 60000);
-      alertas.push({
-        tipo: 'IA_NO_RESPONDE',
-        timestamp: timestampArgentina(tsMsg),
-        detalle: `El bot tardó ${minutos} minutos en responder (umbral: ${umbral / 60000} min en ese horario).`,
-      });
+  if (gap > umbral) {
+    const minutos = Math.round(gap / 60000);
+    alertas.push({
+      tipo: 'IA_NO_RESPONDE',
+      timestamp: timestampArgentina(tsUltimo),
+      detalle: `El último mensaje es del usuario (inbound) y el Asistente IA no respondió. Tiempo sin respuesta: ${minutos} minutos.`,
+    });
     }
   }
 
@@ -458,8 +427,10 @@ function construirMensajeCliente(cliente, conversacionesAnalizadas, alertasPorCo
 
   if (totalAlertas === 0) {
     return (
+      `\n\n▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `📋 **REPORTE DIARIO — ${cliente.nombre.toUpperCase()}**\n` +
       `Fecha: ${fecha}\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `Conversaciones analizadas: ${conversacionesAnalizadas}\n` +
       `🟢 Sin alertas críticas. Todo funcionando correctamente.\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
@@ -467,8 +438,10 @@ function construirMensajeCliente(cliente, conversacionesAnalizadas, alertasPorCo
   }
 
   let msg =
+    `\n\n▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
     `📋 **REPORTE DIARIO — ${cliente.nombre.toUpperCase()}**\n` +
     `Fecha: ${fecha}\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
     `Conversaciones analizadas: ${conversacionesAnalizadas}\n` +
     `🔴 Alertas críticas: ${totalAlertas}\n\n`;
 
@@ -482,11 +455,12 @@ function construirMensajeCliente(cliente, conversacionesAnalizadas, alertasPorCo
       }[alerta.tipo] || alerta.tipo;
 
       msg +=
-        `${emoji} ${nombre}\n` +
-        `Contacto: ${contactoUrl}\n` +
-        `Hora: ${alerta.timestamp}\n` +
-        `Detalle: ${alerta.detalle}\n` +
-        `- - - - - - - - - - - - - - - - - - - -\n`;
+        `\n🚨 **${nombre}**\n` +
+        `**Cliente** ${cliente.nombre}\n` +
+        `**Contacto** ${contactoUrl}\n` +
+        `**Hora** ${alerta.timestamp}\n` +
+        `**Detalle** ${alerta.detalle}\n` +
+        `\n`;
     }
   }
 
@@ -525,7 +499,7 @@ async function auditarCliente(cliente) {
     alertas.push(...alertasNoDerivacion);
 
     // Alerta 3 — IA no responde
-    const alertasNoResponde = detectarIANoResponde(mensajes);
+    const alertasNoResponde = detectarIANoResponde(mensajes, conv);
     alertas.push(...alertasNoResponde);
 
     // Alerta 2 — Error de prompt (solo si hay mensajes suficientes)
@@ -594,8 +568,10 @@ async function main() {
   const hora = new Date().toLocaleTimeString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' });
 
   let resumen =
+    `\n\n▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
     `📊 RESUMEN GENERAL — AURELIA\n` +
     `Fecha y hora: ${fecha} | ${hora}\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
     `Total conversaciones auditadas: ${totalConversaciones}\n` +
     `🔴 Total alertas críticas: ${totalAlertas}\n` +
     `🟢 Clientes sin alertas: ${clientesAfiltrar.length - clientesConAlertas.length}\n`;
