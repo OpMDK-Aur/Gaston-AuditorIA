@@ -37,6 +37,8 @@ jobs:
       GHL_LOCID_ALAMBRADOS: ${{ secrets.GHL_LOCID_ALAMBRADOS }}
       GHL_APIKEY_MDK: ${{ secrets.GHL_APIKEY_MDK }}
       GHL_LOCID_MDK: ${{ secrets.GHL_LOCID_MDK }}
+      GHL_API_ADT: ${{secrets.GHL_API_ADT }}
+      GHL_LOCID_ADT: ${{secretS.GHL_LOCID_ADT }}
       DISCORD_WEBHOOK_AURELIA: ${{ secrets.DISCORD_WEBHOOK_AURELIA }}
 
     steps:
