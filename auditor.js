@@ -554,19 +554,6 @@ async function main() {
 
     const fecha = new Date().toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' });
 
-    // Embed resumen del cliente
-    const colorResumen = alertasCliente > 0 ? 15158332 : 5763719; // rojo : verde
-    await enviarDiscordEmbed({
-      color: colorResumen,
-      title: `📋 ${cliente.nombre.toUpperCase()}`,
-      fields: [
-        { name: 'Fecha', value: fecha, inline: true },
-        { name: 'Conversaciones analizadas', value: String(conversacionesAnalizadas), inline: true },
-        { name: 'Alertas críticas', value: String(alertasCliente), inline: true },
-      ],
-      footer: { text: 'Auditor Aurelia' },
-    });
-
     // Un embed por cada alerta encontrada
     for (const { contactoUrl, alertas } of alertasPorConversacion) {
       for (const alerta of alertas) {
@@ -592,30 +579,7 @@ async function main() {
     }
   }
 
-  // Resumen final como embed
-  const fechaFinal = new Date().toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' });
-  const horaFinal = new Date().toLocaleTimeString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' });
-  const colorFinal = totalAlertas > 0 ? 15158332 : 5763719;
 
-  const camposResumen = [
-    { name: 'Fecha y hora', value: `${fechaFinal} | ${horaFinal}`, inline: false },
-    { name: 'Conversaciones auditadas', value: String(totalConversaciones), inline: true },
-    { name: 'Alertas críticas', value: String(totalAlertas), inline: true },
-    { name: 'Clientes sin alertas', value: String(clientesAfiltrar.length - clientesConAlertas.length), inline: true },
-  ];
-
-  if (clientesConAlertas.length > 0) {
-    camposResumen.push({ name: '⚠️ Requieren atención', value: clientesConAlertas.join(' | '), inline: false });
-  } else {
-    camposResumen.push({ name: '✅ Estado', value: 'Auditoría completada sin incidencias.', inline: false });
-  }
-
-  await enviarDiscordEmbed({
-    color: colorFinal,
-    title: '📊 RESUMEN GENERAL — AURELIA',
-    fields: camposResumen,
-    footer: { text: 'Auditor Aurelia' },
-  });
 
   console.log('\n✅ Auditoría finalizada.');
   console.log(`   Conversaciones: ${totalConversaciones} | Alertas: ${totalAlertas}`);
