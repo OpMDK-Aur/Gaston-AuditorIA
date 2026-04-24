@@ -16,8 +16,8 @@ const CLIENTES = [
   },
   {
     nombre: 'ADT',
-    apiKey: process.env.GHL_APIKEY_ICS,
-    locationId: process.env.GHL_LOCID_ICS,
+    apiKey: process.env.GHL_API_ADT,
+    locationId: process.env.GHL_LOCID_ADT,
     promptFile: 'references/prompts/ics.md',
   },
   {
