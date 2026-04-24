@@ -15,6 +15,12 @@ const CLIENTES = [
     promptFile: 'references/prompts/rame.md',
   },
   {
+    nombre: 'ADT',
+    apiKey: process.env.GHL_APIKEY_ICS,
+    locationId: process.env.GHL_LOCID_ICS,
+    promptFile: 'references/prompts/ics.md',
+  },
+  {
     nombre: 'ICS Salud',
     apiKey: process.env.GHL_APIKEY_ICS,
     locationId: process.env.GHL_LOCID_ICS,
