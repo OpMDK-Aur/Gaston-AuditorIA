@@ -14,6 +14,12 @@ const CLIENTES = [
     locationId: process.env.GHL_LOCID_RAME,
     promptFile: 'references/prompts/rame.md',
   },
+    {
+    nombre: 'GO7',
+    apiKey: process.env.GHL_APIKEY_GO7,
+    locationId: process.env.GHL_LOCID_GO7,
+    promptFile: 'references/prompts/rame.md',
+  },
   {
     nombre: 'ADT',
     apiKey: process.env.GHL_API_ADT,
