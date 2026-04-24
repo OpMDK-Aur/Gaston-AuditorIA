@@ -420,6 +420,18 @@ async function enviarDiscord(mensaje) {
   }
 }
 
+async function enviarDiscordEmbed(embed) {
+  await sleep(300);
+  const res = await fetch(DISCORD_WEBHOOK, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ embeds: [embed] }),
+  });
+  if (!res.ok) {
+    console.error(`Error al enviar embed a Discord: ${res.status}`);
+  }
+}
+
 function construirMensajeCliente(cliente, conversacionesAnalizadas, alertasPorConversacion) {
   const fecha = new Date().toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' });
   const totalAlertas = alertasPorConversacion.reduce((acc, a) => acc + a.alertas.length, 0);
@@ -427,7 +439,7 @@ function construirMensajeCliente(cliente, conversacionesAnalizadas, alertasPorCo
   if (totalAlertas === 0) {
     return (
       `\n\n▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `📋 **REPORTE DIARIO — ${cliente.nombre.toUpperCase()}**\n` +
+      `**REPORTE DIARIO — ${cliente.nombre.toUpperCase()}** 📋\n` +
       `Fecha: ${fecha}\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `Conversaciones analizadas: ${conversacionesAnalizadas}\n` +
@@ -438,7 +450,7 @@ function construirMensajeCliente(cliente, conversacionesAnalizadas, alertasPorCo
 
   let msg =
     `\n\n▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `📋 **REPORTE DIARIO — ${cliente.nombre.toUpperCase()}**\n` +
+    `**REPORTE DIARIO — ${cliente.nombre.toUpperCase()}** 📋\n` +
     `Fecha: ${fecha}\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
     `Conversaciones analizadas: ${conversacionesAnalizadas}\n` +
@@ -454,7 +466,7 @@ function construirMensajeCliente(cliente, conversacionesAnalizadas, alertasPorCo
       }[alerta.tipo] || alerta.tipo;
 
       msg +=
-        `\n🚨 **${nombre}**\n` +
+        `\n**🚨 ${nombre}**\n` +
         `**Cliente** ${cliente.nombre}\n` +
         `**Contacto** ${contactoUrl}\n` +
         `**Hora** ${alerta.timestamp}\n` +
@@ -540,49 +552,70 @@ async function main() {
     totalAlertas += alertasCliente;
     if (alertasCliente > 0) clientesConAlertas.push(cliente.nombre);
 
-    const mensaje = construirMensajeCliente(cliente, conversacionesAnalizadas, alertasPorConversacion);
+    const fecha = new Date().toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' });
 
-    // Dividir si supera 2000 caracteres
-    if (mensaje.length <= 2000) {
-      await enviarDiscord(mensaje);
-    } else {
-      const partes = [];
-      let parte = '';
-      for (const linea of mensaje.split('\n')) {
-        if ((parte + linea).length > 1900) {
-          partes.push(parte);
-          parte = '';
-        }
-        parte += linea + '\n';
-      }
-      if (parte) partes.push(parte);
-      for (let i = 0; i < partes.length; i++) {
-        await enviarDiscord(`${partes[i].trim()}\n*(${i + 1}/${partes.length})*`);
+    // Embed resumen del cliente
+    const colorResumen = alertasCliente > 0 ? 15158332 : 5763719; // rojo : verde
+    await enviarDiscordEmbed({
+      color: colorResumen,
+      title: `📋 ${cliente.nombre.toUpperCase()}`,
+      fields: [
+        { name: 'Fecha', value: fecha, inline: true },
+        { name: 'Conversaciones analizadas', value: String(conversacionesAnalizadas), inline: true },
+        { name: 'Alertas críticas', value: String(alertasCliente), inline: true },
+      ],
+      footer: { text: 'Auditor Aurelia' },
+    });
+
+    // Un embed por cada alerta encontrada
+    for (const { contactoUrl, alertas } of alertasPorConversacion) {
+      for (const alerta of alertas) {
+        const colorEmbed = alerta.tipo === 'ERROR_DE_PROMPT' ? 16776960 : 15158332;
+        const titulo = {
+          NO_DERIVACION: '⚠️ No Derivación',
+          ERROR_DE_PROMPT: '🟡 Error de Prompt',
+          IA_NO_RESPONDE: '🚨 IA No Responde',
+        }[alerta.tipo] || alerta.tipo;
+
+        await enviarDiscordEmbed({
+          color: colorEmbed,
+          title: titulo,
+          fields: [
+            { name: 'Cliente', value: cliente.nombre, inline: true },
+            { name: 'Hora', value: alerta.timestamp, inline: true },
+            { name: 'Contacto', value: contactoUrl, inline: false },
+            { name: 'Detalle', value: alerta.detalle, inline: false },
+          ],
+          footer: { text: `Auditor Aurelia — ${fecha}` },
+        });
       }
     }
   }
 
-  // Resumen final
-  const fecha = new Date().toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' });
-  const hora = new Date().toLocaleTimeString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' });
+  // Resumen final como embed
+  const fechaFinal = new Date().toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' });
+  const horaFinal = new Date().toLocaleTimeString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' });
+  const colorFinal = totalAlertas > 0 ? 15158332 : 5763719;
 
-  let resumen =
-    `\n\n▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `📊 RESUMEN GENERAL — AURELIA\n` +
-    `Fecha y hora: ${fecha} | ${hora}\n` +
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `Total conversaciones auditadas: ${totalConversaciones}\n` +
-    `🔴 Total alertas críticas: ${totalAlertas}\n` +
-    `🟢 Clientes sin alertas: ${clientesAfiltrar.length - clientesConAlertas.length}\n`;
+  const camposResumen = [
+    { name: 'Fecha y hora', value: `${fechaFinal} | ${horaFinal}`, inline: false },
+    { name: 'Conversaciones auditadas', value: String(totalConversaciones), inline: true },
+    { name: 'Alertas críticas', value: String(totalAlertas), inline: true },
+    { name: 'Clientes sin alertas', value: String(clientesAfiltrar.length - clientesConAlertas.length), inline: true },
+  ];
 
   if (clientesConAlertas.length > 0) {
-    resumen += `\n⚠️ Requieren atención: ${clientesConAlertas.join(' | ')}\n`;
+    camposResumen.push({ name: '⚠️ Requieren atención', value: clientesConAlertas.join(' | '), inline: false });
   } else {
-    resumen += `\nAuditoría completada sin incidencias.\n`;
+    camposResumen.push({ name: '✅ Estado', value: 'Auditoría completada sin incidencias.', inline: false });
   }
 
-  resumen += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
-  await enviarDiscord(resumen);
+  await enviarDiscordEmbed({
+    color: colorFinal,
+    title: '📊 RESUMEN GENERAL — AURELIA',
+    fields: camposResumen,
+    footer: { text: 'Auditor Aurelia' },
+  });
 
   console.log('\n✅ Auditoría finalizada.');
   console.log(`   Conversaciones: ${totalConversaciones} | Alertas: ${totalAlertas}`);
