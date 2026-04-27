@@ -37,7 +37,7 @@ llamada a la API.
 
 ## FLUJO DE EJECUCIÓN
 
-La auditoría corre una vez por día a las 9:00 AM (Argentina, GMT-3).
+La auditoría corre todos los días, una vez por día, a las 9:00 AM (Argentina, GMT-3).
 Puede correrse también bajo demanda explícita del equipo Aurelia.
 
 ### PASO 1 — Obtener conversaciones del día anterior
