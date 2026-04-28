@@ -575,6 +575,97 @@ function construirMensajeCliente(cliente, conversacionesAnalizadas, alertasPorCo
 }
 
 
+
+// ─── DETECCIÓN HEURÍSTICA SIN CLAUDE ─────────────────────────────────────────
+
+const FRASES_PROHIBIDAS_GLOBALES = [
+  'te armo el presupuesto',
+  'voy a armarte el presupuesto',
+  'te armo una cotización',
+  'te paso el presupuesto',
+  'te mando el presupuesto',
+  'te preparo el presupuesto',
+  'lo tendrás listo mañana',
+  'lo tenés listo mañana',
+  'voy a armarte',
+  'te incluiré opciones',
+  'armar el presupuesto',
+];
+
+const FRASES_PROHIBIDAS_POR_CLIENTE = {
+  'Nobis': [
+    'brochure',
+    'cartilla',
+    'te mando la cartilla',
+    'te paso la cartilla',
+    'clínica',
+    'sanatorio',
+    'prestador',
+    'te mando el brochure',
+    'te paso el brochure',
+  ],
+  'ICS Salud': [
+    'brochure',
+    'cartilla',
+    'te mando la cartilla',
+    'te paso la cartilla',
+    'clínica',
+    'sanatorio',
+    'prestador',
+    'te mando el brochure',
+    'te paso el brochure',
+  ],
+};
+
+function detectarPatronesProhibidos(mensajes, nombreCliente) {
+  const alertas = [];
+  const mensajesBot = mensajes.filter(m => m.direction === 'outbound');
+
+  // 1. Frases prohibidas globales
+  const frasesProhibidas = [
+    ...FRASES_PROHIBIDAS_GLOBALES,
+    ...(FRASES_PROHIBIDAS_POR_CLIENTE[nombreCliente] || []),
+  ];
+
+  for (const msg of mensajesBot) {
+    const texto = (msg.body || '').toLowerCase();
+    for (const frase of frasesProhibidas) {
+      if (texto.includes(frase.toLowerCase())) {
+        alertas.push({
+          tipo: 'ERROR_DE_PROMPT',
+          timestamp: timestampArgentina(new Date(msg.dateAdded || 0).getTime()),
+          detalle: `El bot usó una frase prohibida: "${frase}". Mensaje: "${(msg.body || '').substring(0, 100)}..."`,
+        });
+        break; // Una alerta por mensaje es suficiente
+      }
+    }
+  }
+
+  // 2. Detección de preguntas repetidas (ciclo)
+  const preguntasBot = mensajesBot
+    .map(m => (m.body || '').toLowerCase().trim())
+    .filter(t => t.endsWith('?') || t.includes('?'));
+
+  const conteo = {};
+  for (const pregunta of preguntasBot) {
+    // Normalizar pregunta para comparación (quitar espacios extra)
+    const clave = pregunta.replace(/\s+/g, ' ').substring(0, 80);
+    conteo[clave] = (conteo[clave] || 0) + 1;
+  }
+
+  for (const [pregunta, veces] of Object.entries(conteo)) {
+    if (veces >= 2) {
+      alertas.push({
+        tipo: 'ERROR_DE_PROMPT',
+        timestamp: timestampArgentina(Date.now()),
+        detalle: `El bot repitió la misma pregunta ${veces} veces: "${pregunta.substring(0, 100)}..."`,
+      });
+    }
+  }
+
+  return alertas;
+}
+
 // ─── OBTENER ESTADO DE CONVERSACIÓN VÍA CUSTOM FIELDS ────────────────────────
 
 async function obtenerEstadoConversacion(cliente, contactId) {
@@ -680,7 +771,11 @@ async function auditarCliente(cliente) {
     const promptReferencia = leerArchivoReferencia(cliente.promptFile);
     const alertas = await detectarAlertas(mensajes, conv, cliente, estadoConv, promptReferencia);
 
-    // Alerta 2 — Error de prompt con Claude (complementaria)
+    // Alerta 2a — Detección heurística (sin Claude, siempre corre)
+    const alertasHeuristicas = detectarPatronesProhibidos(mensajes, cliente.nombre);
+    alertas.push(...alertasHeuristicas);
+
+    // Alerta 2b — Error de prompt con Claude (análisis profundo, requiere API Key)
     const alertaErrorPrompt = await detectarErrorDePrompt(mensajes, cliente);
     if (alertaErrorPrompt) alertas.push(alertaErrorPrompt);
 
