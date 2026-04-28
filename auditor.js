@@ -14,18 +14,6 @@ const CLIENTES = [
     locationId: process.env.GHL_LOCID_RAME,
     promptFile: 'references/prompts/rame.md',
   },
-    {
-    nombre: 'GO7',
-    apiKey: process.env.GHL_APIKEY_GO7,
-    locationId: process.env.GHL_LOCID_GO7,
-    promptFile: 'references/prompts/rame.md',
-  },
-  {
-    nombre: 'ADT',
-    apiKey: process.env.GHL_API_ADT,
-    locationId: process.env.GHL_LOCID_ADT,
-    promptFile: 'references/prompts/ics.md',
-  },
   {
     nombre: 'ICS Salud',
     apiKey: process.env.GHL_APIKEY_ICS,
@@ -222,6 +210,12 @@ const FRASES_DERIVACION = {
     'un asesor te contactará',
     'lo van a estar asesorando',
     'un asesor te contactará en el horario indicado',
+    'te voy a conectar con un asesor',
+    'te van a asistir en todo',
+    'ya tengo todo lo que necesito',
+    'conectar con alguien del equipo',
+    'te paso con un asesor',
+    'un asesor que va a ayudarte',
   ],
   'ICS Salud': [
     'te derivo con un asesor',
@@ -284,7 +278,19 @@ async function detectarAlertas(mensajes, conv, cliente, estadoConv, promptRefere
   const ultimoEsInbound = ultimoMensajeEsInbound(mensajes);
   const dijoQueDerivó = botDijoQueDerivó(mensajes, cliente.nombre);
 
-  console.log(`   → Estado: ${estado || 'sin estado'} | Owner IA: ${ownerEsIA} | Último inbound: ${ultimoEsInbound} | Dijo que derivó: ${dijoQueDerivó}`);
+  const ownerVacio = !(conv.ownerId || conv.assignedTo || '').trim();
+
+  console.log(`   → Estado: ${estado || 'sin estado'} | Owner IA: ${ownerEsIA} | Owner vacío: ${ownerVacio} | Último inbound: ${ultimoEsInbound} | Dijo que derivó: ${dijoQueDerivó}`);
+
+  // ── ERROR DE ASIGNACIÓN — owner vacío independientemente del estado ────────
+  if (ownerVacio) {
+    alertas.push({
+      tipo: 'ERROR_DE_ASIGNACION',
+      timestamp: timestampArgentina(Date.now()),
+      detalle: `La conversación no tiene owner asignado (estado: ${estado || 'sin estado'}). Requiere asignación manual.`,
+    });
+    return alertas;
+  }
 
   // ── DESCALIFICADO ──────────────────────────────────────────────────────────
   // Si está DESCALIFICADO, verificar con Claude si la descalificación fue correcta
@@ -373,7 +379,19 @@ Respondé SOLO en JSON sin texto adicional:
     return alertas;
   }
 
-  // ── SIN ESTADO DEFINIDO — lógica original ─────────────────────────────────
+  // ── SIN ESTADO DEFINIDO ────────────────────────────────────────────────────
+
+  // Si dijo que derivó y el owner sigue siendo IA → Error de Derivación
+  if (dijoQueDerivó && ownerEsIA) {
+    alertas.push({
+      tipo: 'ERROR_DE_DERIVACION',
+      timestamp: timestampArgentina(Date.now()),
+      detalle: 'El bot informó que derivó pero el owner sigue siendo Asistente IA y no hay registro de acción humana.',
+    });
+    return alertas;
+  }
+
+  // Si el último mensaje es inbound y el owner es IA → IA No Responde
   if (ultimoEsInbound && ownerEsIA) {
     const tsUltimo = new Date(mensajes[mensajes.length-1].dateAdded || 0).getTime();
     const umbral = esHorarioComercial(tsUltimo) ? UMBRAL_COMERCIAL_MS : UMBRAL_FUERA_HORARIO_MS;
@@ -717,6 +735,7 @@ async function main() {
           ERROR_DE_DERIVACION: '🔴 Error de Derivación',
           ERROR_DE_DESCALIFICACION: '🔴 Error de Descalificación',
           ERROR_DE_RECONTACTO: '🔔 Error de Recontacto',
+          ERROR_DE_ASIGNACION: '👤 Error de Asignación',
         }[alerta.tipo] || alerta.tipo;
 
         await enviarDiscordEmbed({
