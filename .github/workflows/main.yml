@@ -25,8 +25,6 @@ jobs:
 
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      GHL_APIKEY_RAME: ${{ secrets.GHL_APIKEY_RAME }}
-      GHL_LOCID_RAME: ${{ secrets.GHL_LOCID_RAME }}
       GHL_APIKEY_ICS: ${{ secrets.GHL_APIKEY_ICS }}
       GHL_LOCID_ICS: ${{ secrets.GHL_LOCID_ICS }}
       GHL_APIKEY_NOBIS: ${{ secrets.GHL_APIKEY_NOBIS }}
