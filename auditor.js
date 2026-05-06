@@ -8,12 +8,7 @@ const path = require('path');
 // ─── CONFIGURACIÓN DE CLIENTES ───────────────────────────────────────────────
 
 const CLIENTES = [
-  {
-    nombre: 'Ramé Travel',
-    apiKey: process.env.GHL_APIKEY_RAME,
-    locationId: process.env.GHL_LOCID_RAME,
-    promptFile: 'references/prompts/rame.md',
-  },
+
   {
     nombre: 'ICS Salud',
     apiKey: process.env.GHL_APIKEY_ICS,
@@ -25,6 +20,14 @@ const CLIENTES = [
     apiKey: process.env.GHL_APIKEY_NOBIS,
     locationId: process.env.GHL_LOCID_NOBIS,
     promptFile: 'references/prompts/nobis.md',
+    botName: 'Fer',
+  },
+  {
+    nombre: 'Nobis Remarketing',
+    apiKey: process.env.GHL_APIKEY_NOBIS,
+    locationId: process.env.GHL_LOCID_NOBIS,
+    promptFile: 'references/prompts/nobis-remarketing.md',
+    botName: 'Lili',
   },
   {
     nombre: 'Sistemas de Cargas',
@@ -204,19 +207,7 @@ async function obtenerMensajes(cliente, conversationId) {
 // ─── DETECCIÓN DE ALERTAS ─────────────────────────────────────────────────────
 
 const FRASES_DERIVACION = {
-  'Ramé Travel': [
-    'un asesor se pondrá en contacto',
-    'te derivo con un asesor',
-    'un asesor te contactará',
-    'lo van a estar asesorando',
-    'un asesor te contactará en el horario indicado',
-    'te voy a conectar con un asesor',
-    'te van a asistir en todo',
-    'ya tengo todo lo que necesito',
-    'conectar con alguien del equipo',
-    'te paso con un asesor',
-    'un asesor que va a ayudarte',
-  ],
+
   'ICS Salud': [
     'te derivo con un asesor',
     'perfecto, con esto ya tengo todo para avanzar',
@@ -227,6 +218,12 @@ const FRASES_DERIVACION = {
     'te derivo con un asesor',
     'dale, te derivo con uno de nuestros asesores expertos',
     'un asesor experto que te va a comentar más detalles',
+  ],
+  'Nobis Remarketing': [
+    'ya agendé para contactarte',
+    'ya agendé el contacto por whatsapp',
+    'mis compañeros del equipo de fidelización te van a escribir',
+    'un asesor de nobis te va a escribir',
   ],
   'Sistemas de Cargas': [
     'le aviso a un asesor experto para que te contacte',
@@ -758,6 +755,15 @@ async function auditarCliente(cliente) {
     // PASO 2 — Obtener mensajes de la conversación
     const mensajes = await obtenerMensajes(cliente, conv.id);
     if (mensajes.length === 0) continue;
+
+    // Filtrar por botName si el cliente lo tiene definido
+    if (cliente.botName) {
+      const tieneMensajeDelBot = mensajes.some(m => {
+        const nombre = (m.fromName || m.author || '').toLowerCase();
+        return nombre.includes(cliente.botName.toLowerCase());
+      });
+      if (!tieneMensajeDelBot) continue;
+    }
 
     // Obtener estado de la conversación via custom fields
     const contactId = conv.contactId || conv.id;
