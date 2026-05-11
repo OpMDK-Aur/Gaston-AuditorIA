@@ -296,23 +296,25 @@ async function detectarAlertas(mensajes, conv, cliente, estadoConv, promptRefere
       .map(m => `[${m.direction === 'inbound' ? 'USUARIO' : 'BOT'}] ${m.body || ''}`)
       .join('\n');
 
+    // Análisis de descalificación con Claude
+    const transcripcionDescalif = mensajes
+      .map(m => `[${m.direction === 'inbound' ? 'USUARIO' : 'BOT'}] ${m.body || ''}`)
+      .join('\n');
+
     const resClaudeDescalif = await callClaudeConRetry({
       model: MODELO_CLAUDE,
-      max_tokens: 500,
+      max_tokens: 300,
       messages: [{
         role: 'user',
-        content: `Sos el Auditor de Aurelia. Analizá esta conversación del bot de "${cliente.nombre}".
+        content: `Sos el Auditor de Aurelia. El contacto fue marcado como DESCALIFICADO por el bot de "${cliente.nombre}". ¿La descalificación fue correcta según el prompt?
 
-El contacto fue marcado como DESCALIFICADO. Tu tarea es determinar si esa descalificación fue CORRECTA o INCORRECTA según el prompt del bot.
-
-## Prompt de referencia:
+## Prompt:
 ${promptReferencia}
 
 ## Conversación:
-${transcripcion}
+${transcripcionDescalif}
 
-Respondé SOLO en JSON sin texto adicional:
-{"descalificacion_correcta": true o false, "motivo": "explicación breve"}`,
+Respondé SOLO en JSON: {"descalificacion_correcta": true o false, "motivo": "explicación breve"}`,
       }],
     });
 
@@ -437,8 +439,65 @@ async function callClaudeConRetry(body, intentos = 3) {
 }
 
 // ─── ANÁLISIS CON CLAUDE (ALERTA 2 — ERROR DE PROMPT) ────────────────────────
+// DESHABILITADO TEMPORALMENTE — muy lento con muchas conversaciones
+// Se usa solo la detección heurística (detectarPatronesProhibidos)
 
-async function detectarErrorDePrompt(mensajes, cliente) {
+async function detectarErrorDePrompt(mensajes, cliente, esConversacionSospechosa = false) {
+  // Solo analizar con Claude si la conversación es sospechosa
+  if (!esConversacionSospechosa) return null;
+  if (mensajes.length < 3) return null;
+
+  const promptReferencia = leerArchivoReferencia(cliente.promptFile);
+  const alertasCriticas = leerArchivoReferencia('references/alertas-criticas.md');
+
+  const transcripcion = mensajes
+    .map(m => `[${m.direction === 'inbound' ? 'USUARIO' : 'BOT'}] ${m.body || ''}`)
+    .join('\n');
+
+  const res = await callClaudeConRetry({
+    model: MODELO_CLAUDE,
+    max_tokens: 500,
+    messages: [{
+      role: 'user',
+      content: `Sos el Auditor de Aurelia. Analizá esta conversación del bot de "${cliente.nombre}" y detectá si hay errores de prompt graves.
+
+## Prompt de referencia:
+${promptReferencia}
+
+## Criterios de error:
+${alertasCriticas}
+
+## Conversación:
+${transcripcion}
+
+Respondé SOLO en JSON sin texto adicional:
+{"hay_error": true o false, "descripcion": "descripción breve o null"}
+
+Solo marcá hay_error: true si el error es claro y grave. En caso de duda, respondé false.`,
+    }],
+  });
+
+  if (!res) return null;
+
+  try {
+    const data = await res.json();
+    const texto = data.content?.[0]?.text || '{}';
+    const resultado = JSON.parse(texto.replace(/\`\`\`json|\`\`\`/g, '').trim());
+    if (resultado.hay_error) {
+      return {
+        tipo: 'ERROR_DE_PROMPT',
+        timestamp: timestampArgentina(new Date(mensajes[0].dateAdded || 0).getTime()),
+        detalle: resultado.descripcion,
+      };
+    }
+  } catch (e) {
+    console.error(`[${cliente.nombre}] Error al parsear respuesta de Claude:`, e.message);
+  }
+
+  return null;
+}
+
+async function _detectarErrorDePromptCompleto_UNUSED(mensajes, cliente) {
   if (mensajes.length < 3) return null;
 
   const promptReferencia = leerArchivoReferencia(cliente.promptFile);
@@ -785,8 +844,21 @@ async function auditarCliente(cliente) {
       const alertasHeuristicas = detectarPatronesProhibidos(mensajes, cliente.nombre);
       alertas.push(...alertasHeuristicas);
 
-      // Error de prompt con Claude (análisis profundo)
-      const alertaErrorPrompt = await detectarErrorDePrompt(mensajes, cliente);
+      // Determinar si la conversación es sospechosa → solo en ese caso llamar a Claude
+      const estado = (estadoConv || '').toUpperCase().trim();
+      const esConversacionSospechosa = (
+        mensajes.length > 10 ||                    // conversación larga
+        alertasHeuristicas.length > 0 ||           // heurística ya detectó algo
+        estado === 'DESCALIFICADO' ||              // descalificación a verificar
+        alertas.some(a => a.tipo === 'ERROR_DE_DERIVACION') // posible error de derivación
+      );
+
+      if (esConversacionSospechosa) {
+        console.log(`   → [${conv.contactId || conv.id}] Conversación sospechosa — analizando con Claude`);
+      }
+
+      // Error de prompt con Claude (solo en conversaciones sospechosas)
+      const alertaErrorPrompt = await detectarErrorDePrompt(mensajes, cliente, esConversacionSospechosa);
       if (alertaErrorPrompt) alertas.push(alertaErrorPrompt);
 
       if (alertas.length > 0) {
