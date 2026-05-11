@@ -102,10 +102,11 @@ function ghlHeaders(apiKey) {
   };
 }
 
-// STEP 1 — Buscar conversaciones recientes por fecha
+// STEP 1 — Buscar conversaciones recientes por fecha (pagina hasta traer todas)
 async function obtenerConversaciones(cliente, startAfterDate) {
   const conversaciones = [];
   let page = 1;
+  const PAGE_LIMIT = 20; // GHL devuelve máximo 20 por página
 
   const fechaDesde = new Date(startAfterDate).toISOString();
   const fechaHasta = new Date().toISOString();
@@ -116,10 +117,10 @@ async function obtenerConversaciones(cliente, startAfterDate) {
     const params = new URLSearchParams({
       locationId: cliente.locationId,
       page: page.toString(),
-      pageLimit: '100',
+      pageLimit: PAGE_LIMIT.toString(),
     });
 
-    console.log(`   → Request: GET /conversations/search?${params}`);
+    console.log(`   → Request página ${page}: GET /conversations/search?${params}`);
 
     const res = await fetch(
       `https://services.leadconnectorhq.com/conversations/search?${params}`,
@@ -140,12 +141,7 @@ async function obtenerConversaciones(cliente, startAfterDate) {
 
     const data = await res.json();
     const todos = data.conversations || [];
-    console.log(`   → Total traídas por GHL (sin filtrar): ${todos.length}`);
-
-    if (todos.length > 0) {
-      const primera = todos[0];
-      console.log(`   → Primera conversación: id=${primera.id} lastMessageDate=${primera.lastMessageDate} dateAdded=${primera.dateAdded}`);
-    }
+    console.log(`   → Página ${page}: ${todos.length} conversaciones traídas`);
 
     // Filtrar por período
     const recientes = todos.filter(c => {
@@ -153,15 +149,19 @@ async function obtenerConversaciones(cliente, startAfterDate) {
       return fecha >= startAfterDate;
     });
 
-    console.log(`   → Conversaciones dentro del período: ${recientes.length}`);
+    console.log(`   → Página ${page}: ${recientes.length} dentro del período`);
     conversaciones.push(...recientes);
 
-    // Si ninguna del lote está en el período o es la última página, terminamos
-    if (todos.length < 100 || recientes.length === 0) break;
+    // Condiciones de corte:
+    // 1. GHL devolvió menos de PAGE_LIMIT → es la última página
+    // 2. Ninguna conversación del lote está dentro del período → las siguientes tampoco (están ordenadas por fecha desc)
+    if (todos.length < PAGE_LIMIT || recientes.length === 0) break;
+
     page++;
-    await sleep(300);
+    await sleep(300); // Respetar rate limit de GHL
   }
 
+  console.log(`   → Total conversaciones encontradas: ${conversaciones.length} (${page} páginas consultadas)`);
   return conversaciones;
 }
 
