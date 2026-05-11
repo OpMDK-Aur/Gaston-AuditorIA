@@ -751,46 +751,52 @@ async function auditarCliente(cliente) {
 
   const alertasPorConversacion = [];
 
-  for (const conv of conversaciones) {
-    // PASO 2 — Obtener mensajes de la conversación
-    const mensajes = await obtenerMensajes(cliente, conv.id);
-    if (mensajes.length === 0) continue;
+  // Procesar conversaciones en lotes paralelos de 5 para mayor velocidad
+  const BATCH_SIZE = 5;
+  const promptReferencia = leerArchivoReferencia(cliente.promptFile);
 
-    // Filtrar por botName si el cliente lo tiene definido
-    if (cliente.botName) {
-      const tieneMensajeDelBot = mensajes.some(m => {
-        const nombre = (m.fromName || m.author || '').toLowerCase();
-        return nombre.includes(cliente.botName.toLowerCase());
-      });
-      if (!tieneMensajeDelBot) continue;
-    }
+  for (let i = 0; i < conversaciones.length; i += BATCH_SIZE) {
+    const lote = conversaciones.slice(i, i + BATCH_SIZE);
 
-    // Obtener estado de la conversación via custom fields
-    const contactId = conv.contactId || conv.id;
-    const estadoConv = await obtenerEstadoConversacion(cliente, contactId);
-    console.log(`   → Estado conversación contacto ${contactId}: ${estadoConv || 'sin estado'}`);
+    await Promise.all(lote.map(async (conv) => {
+      // PASO 2 — Obtener mensajes y estado en paralelo
+      const [mensajes, estadoConv] = await Promise.all([
+        obtenerMensajes(cliente, conv.id),
+        obtenerEstadoConversacion(cliente, conv.contactId || conv.id),
+      ]);
 
-    // Si el estado indica descalificación correcta → saltar NO DERIVACIÓN
-    const estaDescalificado = estadoConv && ESTADOS_DESCALIFICADOS.some(e => estadoConv.includes(e));
+      if (mensajes.length === 0) return;
 
-    // Nueva lógica unificada por estado
-    const promptReferencia = leerArchivoReferencia(cliente.promptFile);
-    const alertas = await detectarAlertas(mensajes, conv, cliente, estadoConv, promptReferencia);
+      // Filtrar por botName si el cliente lo tiene definido
+      if (cliente.botName) {
+        const tieneMensajeDelBot = mensajes.some(m => {
+          const nombre = (m.fromName || m.author || '').toLowerCase();
+          return nombre.includes(cliente.botName.toLowerCase());
+        });
+        if (!tieneMensajeDelBot) return;
+      }
 
-    // Alerta 2a — Detección heurística (sin Claude, siempre corre)
-    const alertasHeuristicas = detectarPatronesProhibidos(mensajes, cliente.nombre);
-    alertas.push(...alertasHeuristicas);
+      console.log(`   → [${conv.contactId || conv.id}] Estado: ${estadoConv || 'sin estado'}`);
 
-    // Alerta 2b — Error de prompt con Claude (análisis profundo, requiere API Key)
-    const alertaErrorPrompt = await detectarErrorDePrompt(mensajes, cliente);
-    if (alertaErrorPrompt) alertas.push(alertaErrorPrompt);
+      // Lógica unificada por estado
+      const alertas = await detectarAlertas(mensajes, conv, cliente, estadoConv, promptReferencia);
 
-    if (alertas.length > 0) {
-      const contactoUrl = `https://app.soyaurelia.com/v2/location/${cliente.locationId}/contacts/detail/${conv.contactId}`;
-      alertasPorConversacion.push({ contactoUrl, alertas });
-    }
+      // Detección heurística (sin Claude, siempre corre)
+      const alertasHeuristicas = detectarPatronesProhibidos(mensajes, cliente.nombre);
+      alertas.push(...alertasHeuristicas);
 
-    await sleep(300);
+      // Error de prompt con Claude (análisis profundo)
+      const alertaErrorPrompt = await detectarErrorDePrompt(mensajes, cliente);
+      if (alertaErrorPrompt) alertas.push(alertaErrorPrompt);
+
+      if (alertas.length > 0) {
+        const contactoUrl = `https://app.soyaurelia.com/v2/location/${cliente.locationId}/contacts/detail/${conv.contactId}`;
+        alertasPorConversacion.push({ contactoUrl, alertas });
+      }
+    }));
+
+    // Pequeña pausa entre lotes para respetar rate limits
+    if (i + BATCH_SIZE < conversaciones.length) await sleep(500);
   }
 
   return { conversacionesAnalizadas: conversaciones.length, alertasPorConversacion };
