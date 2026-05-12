@@ -196,7 +196,14 @@ async function obtenerMensajes(cliente, conversationId) {
   }
 
   console.log(`   → Mensajes encontrados: ${mensajes.length}`);
-
+  
+// LOG TEMPORAL para analizar estructura de mensajes — remover después
+if (process.env.CONTACT_ID_TEST) {
+  mensajes.forEach((m, i) => {
+    console.log(`   → Mensaje [${i}]: direction=${m.direction} | type=${m.messageType || m.type} | fromName=${m.fromName} | source=${m.source} | userId=${m.userId} | body=${(m.body || '').substring(0, 50)}`);
+  });
+}
+  
   return mensajes.sort((a, b) => {
     const ta = new Date(a.dateAdded || a.createdAt || 0).getTime();
     const tb = new Date(b.dateAdded || b.createdAt || 0).getTime();
