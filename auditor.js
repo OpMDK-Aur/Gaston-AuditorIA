@@ -1,3 +1,199 @@
+// auditor.js — Aurelia GHL Auditor
+// Corre diariamente a las 9:00 AM Argentina (GMT-3) y también a las 16:00 PM Argentina (GMT-3)
+// Llama a la API de GHL para obtener conversaciones y las analiza con Claude
+
+const fs = require('fs');
+const path = require('path');
+
+// ─── CONFIGURACIÓN DE CLIENTES ───────────────────────────────────────────────
+
+const CLIENTES = [
+
+  {
+    nombre: 'ICS Salud',
+    apiKey: process.env.GHL_APIKEY_ICS,
+    locationId: process.env.GHL_LOCID_ICS,
+    promptFile: 'references/prompts/ics.md',
+  },
+  {
+    nombre: 'Nobis',
+    apiKey: process.env.GHL_APIKEY_NOBIS,
+    locationId: process.env.GHL_LOCID_NOBIS,
+    promptFile: 'references/prompts/nobis.md',
+    botName: 'Fer',
+  },
+  {
+    nombre: 'Nobis Remarketing',
+    apiKey: process.env.GHL_APIKEY_NOBIS,
+    locationId: process.env.GHL_LOCID_NOBIS,
+    promptFile: 'references/prompts/nobis-remarketing.md',
+    botName: 'Lili',
+  },
+  {
+    nombre: 'Sistemas de Cargas',
+    apiKey: process.env.GHL_APIKEY_SISTCARGAS,
+    locationId: process.env.GHL_LOCID_SISTCARGAS,
+    promptFile: 'references/prompts/sistcargas.md',
+  },
+  {
+    nombre: 'Alambrados Patagonia',
+    apiKey: process.env.GHL_APIKEY_ALAMBRADOS,
+    locationId: process.env.GHL_LOCID_ALAMBRADOS,
+    promptFile: 'references/prompts/alambrados.md',
+  },
+  {
+    nombre: 'MDK',
+    apiKey: process.env.GHL_APIKEY_MDK,
+    locationId: process.env.GHL_LOCID_MDK,
+    promptFile: 'references/prompts/mdk.md',
+  },
+];
+
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_AURELIA;
+const CLIENTE_FILTRO = process.env.CLIENTE_FILTRO || '';
+const PERIODO_HORAS = parseInt(process.env.PERIODO_HORAS || '24', 10);
+const CONTACT_ID_TEST = process.env.CONTACT_ID_TEST || '';
+const OWNER_ASISTENTE_IA = 'O4EzeIK0KdeoXdlb7VIU'; // Owner ID del Asistente IA en GHL
+const MODELO_CLAUDE = 'claude-haiku-4-5-20251001';
+
+// Horario comercial Argentina (GMT-3)
+const HORA_INICIO_COMERCIAL = 9;
+const HORA_FIN_COMERCIAL = 20;
+const UMBRAL_COMERCIAL_MS = 30 * 60 * 1000;      // 30 minutos
+const UMBRAL_FUERA_HORARIO_MS = 2 * 60 * 60 * 1000; // 2 horas
+const UMBRAL_NO_DERIVACION_MS = 24 * 60 * 60 * 1000; // 24 horas
+
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function timestampArgentina(ts) {
+  return new Date(ts).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' });
+}
+
+function esHorarioComercial(ts) {
+  const fecha = new Date(ts);
+  const hora = parseInt(fecha.toLocaleString('es-AR', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+    hour: 'numeric',
+    hour12: false,
+  }));
+  return hora >= HORA_INICIO_COMERCIAL && hora < HORA_FIN_COMERCIAL;
+}
+
+function leerArchivoReferencia(filePath) {
+  try {
+    return fs.readFileSync(path.join(process.cwd(), filePath), 'utf8');
+  } catch (e) {
+    return `[No se pudo leer ${filePath}]`;
+  }
+}
+
+// ─── API GHL ─────────────────────────────────────────────────────────────────
+
+function ghlHeaders(apiKey) {
+  return {
+    Authorization: `Bearer ${apiKey}`,
+    version: '2021-07-28',
+    'Content-Type': 'application/json',
+  };
+}
+
+// STEP 1 — Buscar conversaciones recientes por fecha
+async function obtenerConversaciones(cliente, startAfterDate) {
+  const conversaciones = [];
+  let page = 1;
+
+  const fechaDesde = new Date(startAfterDate).toISOString();
+  const fechaHasta = new Date().toISOString();
+
+  console.log(`   → Buscando conversaciones desde ${fechaDesde} hasta ${fechaHasta}`);
+
+  while (true) {
+    const params = new URLSearchParams({
+      locationId: cliente.locationId,
+      page: page.toString(),
+      pageLimit: '100',
+    });
+
+    console.log(`   → Request: GET /conversations/search?${params}`);
+
+    const res = await fetch(
+      `https://services.leadconnectorhq.com/conversations/search?${params}`,
+      {
+        method: 'GET',
+        headers: ghlHeaders(cliente.apiKey),
+      }
+    );
+
+    console.log(`   → Status: ${res.status}`);
+
+    if (!res.ok) {
+      const detalle = await res.text();
+      console.error(`[${cliente.nombre}] Error al buscar conversaciones: ${res.status}`);
+      console.error(`  Detalle: ${detalle}`);
+      break;
+    }
+
+    const data = await res.json();
+    const todos = data.conversations || [];
+    console.log(`   → Total traídas por GHL (sin filtrar): ${todos.length}`);
+
+    if (todos.length > 0) {
+      const primera = todos[0];
+      console.log(`   → Primera conversación: id=${primera.id} lastMessageDate=${primera.lastMessageDate} dateAdded=${primera.dateAdded}`);
+    }
+
+    // Filtrar por período
+    const recientes = todos.filter(c => {
+      const fecha = new Date(c.lastMessageDate || c.dateAdded || c.createdAt || 0).getTime();
+      return fecha >= startAfterDate;
+    });
+
+    console.log(`   → Conversaciones dentro del período: ${recientes.length}`);
+    conversaciones.push(...recientes);
+
+    // Si ninguna del lote está en el período o es la última página, terminamos
+    if (todos.length < 100 || recientes.length === 0) break;
+    page++;
+    await sleep(300);
+  }
+
+  return conversaciones;
+}
+
+// STEP 2 — Obtener mensajes de una conversación
+async function obtenerMensajes(cliente, conversationId) {
+  const res = await fetch(
+    `https://services.leadconnectorhq.com/conversations/${conversationId}/messages`,
+    {
+      method: 'GET',
+      headers: ghlHeaders(cliente.apiKey),
+    }
+  );
+
+  if (!res.ok) {
+    const detalle = await res.text();
+    console.error(`[${cliente.nombre}] Error al obtener mensajes de ${conversationId}: ${res.status}`);
+    console.error(`  Detalle: ${detalle}`);
+    return [];
+  }
+
+  const data = await res.json();
+  console.log(`   → Estructura respuesta mensajes: ${JSON.stringify(Object.keys(data))}`);
+  
+  // GHL puede devolver messages directo o dentro de otro objeto
+  let mensajes = [];
+  if (Array.isArray(data.messages)) {
+    mensajes = data.messages;
+  } else if (data.messages && Array.isArray(data.messages.messages)) {
+    mensajes = data.messages.messages;
+  } else if (Array.isArray(data)) {
+    mensajes = data;
+  }
 
   console.log(`   → Mensajes encontrados: ${mensajes.length}`);
 
