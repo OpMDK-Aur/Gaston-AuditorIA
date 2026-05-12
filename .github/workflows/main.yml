@@ -4,6 +4,8 @@ on:
   schedule:
     # 9:00 AM Argentina (GMT-3) = 12:00 UTC
     - cron: '0 12 * * *'
+    # 16:00 PM Argentina (GMT-3) = 19:00 UTC
+    - cron: '0 19 * * *'
   workflow_dispatch:
     inputs:
       cliente:
