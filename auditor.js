@@ -1,199 +1,3 @@
-// auditor.js — Aurelia GHL Auditor
-// Corre diariamente a las 9:00 AM Argentina (GMT-3)
-// Llama a la API de GHL para obtener conversaciones y las analiza con Claude
-
-const fs = require('fs');
-const path = require('path');
-
-// ─── CONFIGURACIÓN DE CLIENTES ───────────────────────────────────────────────
-
-const CLIENTES = [
-
-  {
-    nombre: 'ICS Salud',
-    apiKey: process.env.GHL_APIKEY_ICS,
-    locationId: process.env.GHL_LOCID_ICS,
-    promptFile: 'references/prompts/ics.md',
-  },
-  {
-    nombre: 'Nobis',
-    apiKey: process.env.GHL_APIKEY_NOBIS,
-    locationId: process.env.GHL_LOCID_NOBIS,
-    promptFile: 'references/prompts/nobis.md',
-    botName: 'Fer',
-  },
-  {
-    nombre: 'Nobis Remarketing',
-    apiKey: process.env.GHL_APIKEY_NOBIS,
-    locationId: process.env.GHL_LOCID_NOBIS,
-    promptFile: 'references/prompts/nobis-remarketing.md',
-    botName: 'Lili',
-  },
-  {
-    nombre: 'Sistemas de Cargas',
-    apiKey: process.env.GHL_APIKEY_SISTCARGAS,
-    locationId: process.env.GHL_LOCID_SISTCARGAS,
-    promptFile: 'references/prompts/sistcargas.md',
-  },
-  {
-    nombre: 'Alambrados Patagonia',
-    apiKey: process.env.GHL_APIKEY_ALAMBRADOS,
-    locationId: process.env.GHL_LOCID_ALAMBRADOS,
-    promptFile: 'references/prompts/alambrados.md',
-  },
-  {
-    nombre: 'MDK',
-    apiKey: process.env.GHL_APIKEY_MDK,
-    locationId: process.env.GHL_LOCID_MDK,
-    promptFile: 'references/prompts/mdk.md',
-  },
-];
-
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_AURELIA;
-const CLIENTE_FILTRO = process.env.CLIENTE_FILTRO || '';
-const PERIODO_HORAS = parseInt(process.env.PERIODO_HORAS || '24', 10);
-const CONTACT_ID_TEST = process.env.CONTACT_ID_TEST || '';
-const OWNER_ASISTENTE_IA = 'O4EzeIK0KdeoXdlb7VIU'; // Owner ID del Asistente IA en GHL
-const MODELO_CLAUDE = 'claude-haiku-4-5-20251001';
-
-// Horario comercial Argentina (GMT-3)
-const HORA_INICIO_COMERCIAL = 9;
-const HORA_FIN_COMERCIAL = 20;
-const UMBRAL_COMERCIAL_MS = 30 * 60 * 1000;      // 30 minutos
-const UMBRAL_FUERA_HORARIO_MS = 2 * 60 * 60 * 1000; // 2 horas
-const UMBRAL_NO_DERIVACION_MS = 24 * 60 * 60 * 1000; // 24 horas
-
-// ─── HELPERS ─────────────────────────────────────────────────────────────────
-
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function timestampArgentina(ts) {
-  return new Date(ts).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' });
-}
-
-function esHorarioComercial(ts) {
-  const fecha = new Date(ts);
-  const hora = parseInt(fecha.toLocaleString('es-AR', {
-    timeZone: 'America/Argentina/Buenos_Aires',
-    hour: 'numeric',
-    hour12: false,
-  }));
-  return hora >= HORA_INICIO_COMERCIAL && hora < HORA_FIN_COMERCIAL;
-}
-
-function leerArchivoReferencia(filePath) {
-  try {
-    return fs.readFileSync(path.join(process.cwd(), filePath), 'utf8');
-  } catch (e) {
-    return `[No se pudo leer ${filePath}]`;
-  }
-}
-
-// ─── API GHL ─────────────────────────────────────────────────────────────────
-
-function ghlHeaders(apiKey) {
-  return {
-    Authorization: `Bearer ${apiKey}`,
-    version: '2021-07-28',
-    'Content-Type': 'application/json',
-  };
-}
-
-// STEP 1 — Buscar conversaciones recientes por fecha (pagina hasta traer todas)
-async function obtenerConversaciones(cliente, startAfterDate) {
-  const conversaciones = [];
-  let page = 1;
-  const PAGE_LIMIT = 20; // GHL devuelve máximo 20 por página
-
-  const fechaDesde = new Date(startAfterDate).toISOString();
-  const fechaHasta = new Date().toISOString();
-
-  console.log(`   → Buscando conversaciones desde ${fechaDesde} hasta ${fechaHasta}`);
-
-  while (true) {
-    const params = new URLSearchParams({
-      locationId: cliente.locationId,
-      page: page.toString(),
-      pageLimit: PAGE_LIMIT.toString(),
-    });
-
-    console.log(`   → Request página ${page}: GET /conversations/search?${params}`);
-
-    const res = await fetch(
-      `https://services.leadconnectorhq.com/conversations/search?${params}`,
-      {
-        method: 'GET',
-        headers: ghlHeaders(cliente.apiKey),
-      }
-    );
-
-    console.log(`   → Status: ${res.status}`);
-
-    if (!res.ok) {
-      const detalle = await res.text();
-      console.error(`[${cliente.nombre}] Error al buscar conversaciones: ${res.status}`);
-      console.error(`  Detalle: ${detalle}`);
-      break;
-    }
-
-    const data = await res.json();
-    const todos = data.conversations || [];
-    console.log(`   → Página ${page}: ${todos.length} conversaciones traídas`);
-
-    // Filtrar por período
-    const recientes = todos.filter(c => {
-      const fecha = new Date(c.lastMessageDate || c.dateAdded || c.createdAt || 0).getTime();
-      return fecha >= startAfterDate;
-    });
-
-    console.log(`   → Página ${page}: ${recientes.length} dentro del período`);
-    conversaciones.push(...recientes);
-
-    // Condiciones de corte:
-    // 1. GHL devolvió menos de PAGE_LIMIT → es la última página
-    // 2. Ninguna conversación del lote está dentro del período → las siguientes tampoco (están ordenadas por fecha desc)
-    if (todos.length < PAGE_LIMIT || recientes.length === 0) break;
-
-    page++;
-    await sleep(300); // Respetar rate limit de GHL
-  }
-
-  console.log(`   → Total conversaciones encontradas: ${conversaciones.length} (${page} páginas consultadas)`);
-  return conversaciones;
-}
-
-// STEP 2 — Obtener mensajes de una conversación
-async function obtenerMensajes(cliente, conversationId) {
-  const res = await fetch(
-    `https://services.leadconnectorhq.com/conversations/${conversationId}/messages`,
-    {
-      method: 'GET',
-      headers: ghlHeaders(cliente.apiKey),
-    }
-  );
-
-  if (!res.ok) {
-    const detalle = await res.text();
-    console.error(`[${cliente.nombre}] Error al obtener mensajes de ${conversationId}: ${res.status}`);
-    console.error(`  Detalle: ${detalle}`);
-    return [];
-  }
-
-  const data = await res.json();
-  console.log(`   → Estructura respuesta mensajes: ${JSON.stringify(Object.keys(data))}`);
-  
-  // GHL puede devolver messages directo o dentro de otro objeto
-  let mensajes = [];
-  if (Array.isArray(data.messages)) {
-    mensajes = data.messages;
-  } else if (data.messages && Array.isArray(data.messages.messages)) {
-    mensajes = data.messages.messages;
-  } else if (Array.isArray(data)) {
-    mensajes = data;
-  }
 
   console.log(`   → Mensajes encontrados: ${mensajes.length}`);
 
@@ -296,25 +100,23 @@ async function detectarAlertas(mensajes, conv, cliente, estadoConv, promptRefere
       .map(m => `[${m.direction === 'inbound' ? 'USUARIO' : 'BOT'}] ${m.body || ''}`)
       .join('\n');
 
-    // Análisis de descalificación con Claude
-    const transcripcionDescalif = mensajes
-      .map(m => `[${m.direction === 'inbound' ? 'USUARIO' : 'BOT'}] ${m.body || ''}`)
-      .join('\n');
-
     const resClaudeDescalif = await callClaudeConRetry({
       model: MODELO_CLAUDE,
-      max_tokens: 300,
+      max_tokens: 500,
       messages: [{
         role: 'user',
-        content: `Sos el Auditor de Aurelia. El contacto fue marcado como DESCALIFICADO por el bot de "${cliente.nombre}". ¿La descalificación fue correcta según el prompt?
+        content: `Sos el Auditor de Aurelia. Analizá esta conversación del bot de "${cliente.nombre}".
 
-## Prompt:
+El contacto fue marcado como DESCALIFICADO. Tu tarea es determinar si esa descalificación fue CORRECTA o INCORRECTA según el prompt del bot.
+
+## Prompt de referencia:
 ${promptReferencia}
 
 ## Conversación:
-${transcripcionDescalif}
+${transcripcion}
 
-Respondé SOLO en JSON: {"descalificacion_correcta": true o false, "motivo": "explicación breve"}`,
+Respondé SOLO en JSON sin texto adicional:
+{"descalificacion_correcta": true o false, "motivo": "explicación breve"}`,
       }],
     });
 
@@ -439,65 +241,8 @@ async function callClaudeConRetry(body, intentos = 3) {
 }
 
 // ─── ANÁLISIS CON CLAUDE (ALERTA 2 — ERROR DE PROMPT) ────────────────────────
-// DESHABILITADO TEMPORALMENTE — muy lento con muchas conversaciones
-// Se usa solo la detección heurística (detectarPatronesProhibidos)
 
-async function detectarErrorDePrompt(mensajes, cliente, esConversacionSospechosa = false) {
-  // Solo analizar con Claude si la conversación es sospechosa
-  if (!esConversacionSospechosa) return null;
-  if (mensajes.length < 3) return null;
-
-  const promptReferencia = leerArchivoReferencia(cliente.promptFile);
-  const alertasCriticas = leerArchivoReferencia('references/alertas-criticas.md');
-
-  const transcripcion = mensajes
-    .map(m => `[${m.direction === 'inbound' ? 'USUARIO' : 'BOT'}] ${m.body || ''}`)
-    .join('\n');
-
-  const res = await callClaudeConRetry({
-    model: MODELO_CLAUDE,
-    max_tokens: 500,
-    messages: [{
-      role: 'user',
-      content: `Sos el Auditor de Aurelia. Analizá esta conversación del bot de "${cliente.nombre}" y detectá si hay errores de prompt graves.
-
-## Prompt de referencia:
-${promptReferencia}
-
-## Criterios de error:
-${alertasCriticas}
-
-## Conversación:
-${transcripcion}
-
-Respondé SOLO en JSON sin texto adicional:
-{"hay_error": true o false, "descripcion": "descripción breve o null"}
-
-Solo marcá hay_error: true si el error es claro y grave. En caso de duda, respondé false.`,
-    }],
-  });
-
-  if (!res) return null;
-
-  try {
-    const data = await res.json();
-    const texto = data.content?.[0]?.text || '{}';
-    const resultado = JSON.parse(texto.replace(/\`\`\`json|\`\`\`/g, '').trim());
-    if (resultado.hay_error) {
-      return {
-        tipo: 'ERROR_DE_PROMPT',
-        timestamp: timestampArgentina(new Date(mensajes[0].dateAdded || 0).getTime()),
-        detalle: resultado.descripcion,
-      };
-    }
-  } catch (e) {
-    console.error(`[${cliente.nombre}] Error al parsear respuesta de Claude:`, e.message);
-  }
-
-  return null;
-}
-
-async function _detectarErrorDePromptCompleto_UNUSED(mensajes, cliente) {
+async function detectarErrorDePrompt(mensajes, cliente) {
   if (mensajes.length < 3) return null;
 
   const promptReferencia = leerArchivoReferencia(cliente.promptFile);
@@ -810,65 +555,46 @@ async function auditarCliente(cliente) {
 
   const alertasPorConversacion = [];
 
-  // Procesar conversaciones en lotes paralelos de 5 para mayor velocidad
-  const BATCH_SIZE = 5;
-  const promptReferencia = leerArchivoReferencia(cliente.promptFile);
+  for (const conv of conversaciones) {
+    // PASO 2 — Obtener mensajes de la conversación
+    const mensajes = await obtenerMensajes(cliente, conv.id);
+    if (mensajes.length === 0) continue;
 
-  for (let i = 0; i < conversaciones.length; i += BATCH_SIZE) {
-    const lote = conversaciones.slice(i, i + BATCH_SIZE);
+    // Filtrar por botName si el cliente lo tiene definido
+    if (cliente.botName) {
+      const tieneMensajeDelBot = mensajes.some(m => {
+        const nombre = (m.fromName || m.author || '').toLowerCase();
+        return nombre.includes(cliente.botName.toLowerCase());
+      });
+      if (!tieneMensajeDelBot) continue;
+    }
 
-    await Promise.all(lote.map(async (conv) => {
-      // PASO 2 — Obtener mensajes y estado en paralelo
-      const [mensajes, estadoConv] = await Promise.all([
-        obtenerMensajes(cliente, conv.id),
-        obtenerEstadoConversacion(cliente, conv.contactId || conv.id),
-      ]);
+    // Obtener estado de la conversación via custom fields
+    const contactId = conv.contactId || conv.id;
+    const estadoConv = await obtenerEstadoConversacion(cliente, contactId);
+    console.log(`   → Estado conversación contacto ${contactId}: ${estadoConv || 'sin estado'}`);
 
-      if (mensajes.length === 0) return;
+    // Si el estado indica descalificación correcta → saltar NO DERIVACIÓN
+    const estaDescalificado = estadoConv && ESTADOS_DESCALIFICADOS.some(e => estadoConv.includes(e));
 
-      // Filtrar por botName si el cliente lo tiene definido
-      if (cliente.botName) {
-        const tieneMensajeDelBot = mensajes.some(m => {
-          const nombre = (m.fromName || m.author || '').toLowerCase();
-          return nombre.includes(cliente.botName.toLowerCase());
-        });
-        if (!tieneMensajeDelBot) return;
-      }
+    // Nueva lógica unificada por estado
+    const promptReferencia = leerArchivoReferencia(cliente.promptFile);
+    const alertas = await detectarAlertas(mensajes, conv, cliente, estadoConv, promptReferencia);
 
-      console.log(`   → [${conv.contactId || conv.id}] Estado: ${estadoConv || 'sin estado'}`);
+    // Alerta 2a — Detección heurística (sin Claude, siempre corre)
+    const alertasHeuristicas = detectarPatronesProhibidos(mensajes, cliente.nombre);
+    alertas.push(...alertasHeuristicas);
 
-      // Lógica unificada por estado
-      const alertas = await detectarAlertas(mensajes, conv, cliente, estadoConv, promptReferencia);
+    // Alerta 2b — Error de prompt con Claude (análisis profundo, requiere API Key)
+    const alertaErrorPrompt = await detectarErrorDePrompt(mensajes, cliente);
+    if (alertaErrorPrompt) alertas.push(alertaErrorPrompt);
 
-      // Detección heurística (sin Claude, siempre corre)
-      const alertasHeuristicas = detectarPatronesProhibidos(mensajes, cliente.nombre);
-      alertas.push(...alertasHeuristicas);
+    if (alertas.length > 0) {
+      const contactoUrl = `https://app.soyaurelia.com/v2/location/${cliente.locationId}/contacts/detail/${conv.contactId}`;
+      alertasPorConversacion.push({ contactoUrl, alertas });
+    }
 
-      // Determinar si la conversación es sospechosa → solo en ese caso llamar a Claude
-      const estado = (estadoConv || '').toUpperCase().trim();
-      const esConversacionSospechosa = (
-        mensajes.length > 10 ||                    // conversación larga
-        alertasHeuristicas.length > 0 ||           // heurística ya detectó algo
-        estado === 'DESCALIFICADO' ||              // descalificación a verificar
-        alertas.some(a => a.tipo === 'ERROR_DE_DERIVACION') // posible error de derivación
-      );
-
-      if (esConversacionSospechosa) {
-        console.log(`   → [${conv.contactId || conv.id}] Conversación sospechosa — analizando con Claude`);
-      }
-
-      // Error de prompt con Claude (solo en conversaciones sospechosas)
-      const alertaErrorPrompt = await detectarErrorDePrompt(mensajes, cliente, esConversacionSospechosa);
-      if (alertaErrorPrompt) alertas.push(alertaErrorPrompt);
-
-      if (alertas.length > 0) {
-        const contactoUrl = `https://app.soyaurelia.com/v2/location/${cliente.locationId}/contacts/detail/${conv.contactId}`;
-        alertasPorConversacion.push({ contactoUrl, alertas });
-      }
-    }));
-
-    // Pequeña pausa entre lotes para respetar rate limits
-    if (i + BATCH_SIZE < conversaciones.length) await sleep(500);
+    await sleep(300);
   }
 
   return { conversacionesAnalizadas: conversaciones.length, alertasPorConversacion };
