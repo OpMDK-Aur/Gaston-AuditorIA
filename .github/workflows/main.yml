@@ -2,10 +2,10 @@ name: Aurelia — Auditor GHL Diario
 
 on:
   schedule:
-    # 9:00 AM Argentina (GMT-3) = 12:00 UTC
-    - cron: '0 12 * * *'
-    # 16:00 PM Argentina (GMT-3) = 19:00 UTC
-    - cron: '0 19 * * *'
+    # 8:00 AM Argentina (GMT-3) = 11:00 UTC (adelantado para compensar desfasaje de GitHub)
+    - cron: '0 11 * * *'
+    # 15:00 PM Argentina (GMT-3) = 18:00 UTC (adelantado para compensar desfasaje de GitHub)
+    - cron: '0 18 * * *'
   workflow_dispatch:
     inputs:
       cliente:
