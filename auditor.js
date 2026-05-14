@@ -645,7 +645,40 @@ function detectarPatronesProhibidos(mensajes, nombreCliente) {
     }
   }
 
-  // 2. Detección de preguntas repetidas (ciclo)
+// 2. Detección de saludo repetido (presentación del bot más de una vez)
+const mensajesBotTexto = mensajesBot.map(m => (m.body || '').toLowerCase().trim());
+const FRASES_SALUDO = [
+  'hola! soy sofi',
+  'hola, soy sofi',
+  'soy sofi de sistemas de cargas',
+  'hola! soy fer',
+  'hola, soy fer',
+  'soy fer de nobis',
+  'hola! soy lili',
+  'soy lili de nobis',
+  'hola! soy valeria',
+  'soy valeria de mdk',
+  'hola! soy belén',
+  'soy belén',
+  'hola! soy la inteligencia artificial de alambrados',
+  'soy la inteligencia artificial de alambrados',
+  'hola! soy ramón',
+  'soy ramón ramé',
+];
+
+for (const fraseSaludo of FRASES_SALUDO) {
+  const vecesQueAparece = mensajesBotTexto.filter(t => t.includes(fraseSaludo)).length;
+  if (vecesQueAparece >= 2) {
+    alertas.push({
+      tipo: 'ERROR_DE_PROMPT',
+      timestamp: timestampArgentina(Date.now()),
+      detalle: `El bot repitió el saludo de presentación ${vecesQueAparece} veces ("${fraseSaludo}"). El bot solo debe presentarse en el primer mensaje.`,
+    });
+    break;
+  }
+}
+  
+  // 3. Detección de preguntas repetidas (ciclo)
   const preguntasBot = mensajesBot
     .map(m => (m.body || '').toLowerCase().trim())
     .filter(t => t.endsWith('?') || t.includes('?'));
