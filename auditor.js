@@ -703,6 +703,31 @@ for (const fraseSaludo of FRASES_SALUDO) {
   return alertas;
 }
 
+// Deduplicar alertas: si hay alerta de saludo repetido Y de pregunta repetida
+  // con el mismo contenido, conservar solo la de saludo repetido
+  const alertasDeduplicadas = [];
+  const clavesSaludo = new Set();
+ 
+  for (const alerta of alertas) {
+    if (alerta.tipo === 'ERROR_DE_PROMPT' && alerta.detalle.includes('saludo de presentación')) {
+      // Extraer la frase del saludo para usarla como clave
+      const match = alerta.detalle.match(/"([^"]+)"/);
+      if (match) clavesSaludo.add(match[1]);
+      alertasDeduplicadas.push(alerta);
+    } else if (alerta.tipo === 'ERROR_DE_PROMPT' && alerta.detalle.includes('repitió la misma pregunta')) {
+      // Si la pregunta repetida es en realidad un saludo ya detectado → omitir
+      const esSaludoDuplicado = [...clavesSaludo].some(s => alerta.detalle.toLowerCase().includes(s));
+      if (!esSaludoDuplicado) {
+        alertasDeduplicadas.push(alerta);
+      }
+    } else {
+      alertasDeduplicadas.push(alerta);
+    }
+  }
+ 
+  return alertasDeduplicadas;
+}
+
 // ─── OBTENER ESTADO DE CONVERSACIÓN VÍA CUSTOM FIELDS ────────────────────────
 
 async function obtenerEstadoConversacion(cliente, contactId) {
