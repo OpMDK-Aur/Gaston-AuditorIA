@@ -682,7 +682,7 @@ for (const fraseSaludo of FRASES_SALUDO) {
   const preguntasBot = mensajesBot
     .map(m => (m.body || '').toLowerCase().trim())
     .filter(t => t.endsWith('?') || t.includes('?'));
-});
+  });
   const conteo = {};
   for (const pregunta of preguntasBot) {
     // Normalizar pregunta para comparación (quitar espacios extra)
