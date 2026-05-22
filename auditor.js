@@ -197,12 +197,12 @@ async function obtenerMensajes(cliente, conversationId) {
 
   console.log(`   → Mensajes encontrados: ${mensajes.length}`);
   
-// LOG TEMPORAL para analizar estructura de mensajes — remover después
-if (process.env.CONTACT_ID_TEST) {
-  mensajes.forEach((m, i) => {
-    console.log(`   → Mensaje [${i}]: direction=${m.direction} | type=${m.messageType || m.type} | fromName=${m.fromName} | source=${m.source} | userId=${m.userId} | body=${(m.body || '').substring(0, 50)}`);
-  });
-}
+  // LOG TEMPORAL para analizar estructura de mensajes — remover después
+  if (process.env.CONTACT_ID_TEST) {
+    mensajes.forEach((m, i) => {
+      console.log(`   → Mensaje [${i}]: direction=${m.direction} | type=${m.messageType || m.type} | fromName=${m.fromName} | source=${m.source} | userId=${m.userId} | body=${(m.body || '').substring(0, 50)}`);
+    });
+  }
   
   return mensajes.sort((a, b) => {
     const ta = new Date(a.dateAdded || a.createdAt || 0).getTime();
@@ -297,7 +297,6 @@ async function detectarAlertas(mensajes, conv, cliente, estadoConv, promptRefere
   }
 
   // ── DESCALIFICADO ──────────────────────────────────────────────────────────
-  // Si está DESCALIFICADO, verificar con Claude si la descalificación fue correcta
   if (estado === 'DESCALIFICADO') {
     const transcripcion = mensajes
       .map(m => `[${m.direction === 'inbound' ? 'USUARIO' : 'BOT'}] ${m.body || ''}`)
@@ -327,7 +326,7 @@ Respondé SOLO en JSON sin texto adicional:
       const data = await resClaudeDescalif.json();
       const texto = data.content?.[0]?.text || '{}';
       try {
-        const resultado = JSON.parse(texto.replace(/\`\`\`json|\`\`\`/g, '').trim());
+        const resultado = JSON.parse(texto.replace(/```json|```/g, '').trim());
         if (!resultado.descalificacion_correcta) {
           alertas.push({
             tipo: 'ERROR_DE_DESCALIFICACION',
@@ -345,7 +344,6 @@ Respondé SOLO en JSON sin texto adicional:
   }
 
   // ── CONVERSACIÓN EN CURSO ──────────────────────────────────────────────────
-  // El último mensaje debe ser del bot (outbound) y NO debe haber dicho que derivó
   if (estado === 'CONVERSACIÓN EN CURSO' || estado === 'CONVERSACION EN CURSO') {
     if (dijoQueDerivó && ownerEsIA) {
       alertas.push({
@@ -358,7 +356,6 @@ Respondé SOLO en JSON sin texto adicional:
   }
 
   // ── DERIVADO ──────────────────────────────────────────────────────────────
-  // Si está DERIVADO pero el owner sigue siendo Asistente IA o no tiene owner
   if (estado === 'DERIVADO') {
     if (ownerEsIA) {
       alertas.push({
@@ -371,7 +368,6 @@ Respondé SOLO en JSON sin texto adicional:
   }
 
   // ── RECONTACTO / NO CONTESTA ──────────────────────────────────────────────
-  // Si el último mensaje es inbound y el owner sigue siendo Asistente IA
   if (estado === 'RECONTACTO' || estado === 'NO CONTESTA') {
     if (ultimoEsInbound && ownerEsIA) {
       alertas.push({
@@ -456,12 +452,12 @@ async function detectarErrorDePrompt(mensajes, cliente) {
     .join('\n');
 
   const res = await callClaudeConRetry({
-      model: MODELO_CLAUDE,
-      max_tokens: 1000,
-      messages: [
-        {
-          role: 'user',
-          content: `Sos el Auditor de Aurelia. Tu tarea es analizar una conversación del bot de "${cliente.nombre}" y detectar si hay errores de prompt graves.
+    model: MODELO_CLAUDE,
+    max_tokens: 1000,
+    messages: [
+      {
+        role: 'user',
+        content: `Sos el Auditor de Aurelia. Tu tarea es analizar una conversación del bot de "${cliente.nombre}" y detectar si hay errores de prompt graves.
 
 ## Prompt de referencia del bot:
 ${promptReferencia}
@@ -480,8 +476,8 @@ Analizá la conversación y respondé SOLO en JSON con este formato exacto, sin 
 }
 
 Solo marcá hay_error: true si el error es claro y grave (no ambigüedades). En caso de duda, respondé false.`,
-        },
-      ],
+      },
+    ],
   });
 
   if (!res) return null;
@@ -578,8 +574,6 @@ function construirMensajeCliente(cliente, conversacionesAnalizadas, alertasPorCo
   return msg.trim();
 }
 
-
-
 // ─── DETECCIÓN HEURÍSTICA SIN CLAUDE ─────────────────────────────────────────
 
 const FRASES_PROHIBIDAS_GLOBALES = [
@@ -621,6 +615,25 @@ const FRASES_PROHIBIDAS_POR_CLIENTE = {
   ],
 };
 
+const FRASES_SALUDO = [
+  'hola! soy sofi',
+  'hola, soy sofi',
+  'soy sofi de sistemas de cargas',
+  'hola! soy fer',
+  'hola, soy fer',
+  'soy fer de nobis',
+  'hola! soy lili',
+  'soy lili de nobis',
+  'hola! soy valeria',
+  'soy valeria de mdk',
+  'hola! soy belén',
+  'soy belén',
+  'hola! soy la inteligencia artificial de alambrados',
+  'soy la inteligencia artificial de alambrados',
+  'hola! soy ramón',
+  'soy ramón ramé',
+];
+
 function detectarPatronesProhibidos(mensajes, nombreCliente) {
   const alertas = [];
   const mensajesBot = mensajes.filter(m => m.direction === 'outbound');
@@ -645,44 +658,26 @@ function detectarPatronesProhibidos(mensajes, nombreCliente) {
     }
   }
 
-// 2. Detección de saludo repetido (presentación del bot más de una vez)
-const mensajesBotTexto = mensajesBot.map(m => (m.body || '').toLowerCase().trim());
-const FRASES_SALUDO = [
-  'hola! soy sofi',
-  'hola, soy sofi',
-  'soy sofi de sistemas de cargas',
-  'hola! soy fer',
-  'hola, soy fer',
-  'soy fer de nobis',
-  'hola! soy lili',
-  'soy lili de nobis',
-  'hola! soy valeria',
-  'soy valeria de mdk',
-  'hola! soy belén',
-  'soy belén',
-  'hola! soy la inteligencia artificial de alambrados',
-  'soy la inteligencia artificial de alambrados',
-  'hola! soy ramón',
-  'soy ramón ramé',
-];
+  // 2. Detección de saludo repetido (presentación del bot más de una vez)
+  const mensajesBotTexto = mensajesBot.map(m => (m.body || '').toLowerCase().trim());
 
-for (const fraseSaludo of FRASES_SALUDO) {
-  const vecesQueAparece = mensajesBotTexto.filter(t => t.includes(fraseSaludo)).length;
-  if (vecesQueAparece >= 2) {
-    alertas.push({
-      tipo: 'ERROR_DE_PROMPT',
-      timestamp: timestampArgentina(Date.now()),
-      detalle: `El bot repitió el saludo de presentación ${vecesQueAparece} veces ("${fraseSaludo}"). El bot solo debe presentarse en el primer mensaje.`,
-    });
-    break;
+  for (const fraseSaludo of FRASES_SALUDO) {
+    const vecesQueAparece = mensajesBotTexto.filter(t => t.includes(fraseSaludo)).length;
+    if (vecesQueAparece >= 2) {
+      alertas.push({
+        tipo: 'ERROR_DE_PROMPT',
+        timestamp: timestampArgentina(Date.now()),
+        detalle: `El bot repitió el saludo de presentación ${vecesQueAparece} veces ("${fraseSaludo}"). El bot solo debe presentarse en el primer mensaje.`,
+      });
+      break;
+    }
   }
-}
-  
+
   // 3. Detección de preguntas repetidas (ciclo)
   const preguntasBot = mensajesBot
     .map(m => (m.body || '').toLowerCase().trim())
     .filter(t => t.endsWith('?') || t.includes('?'));
-  });
+
   const conteo = {};
   for (const pregunta of preguntasBot) {
     // Normalizar pregunta para comparación (quitar espacios extra)
@@ -700,32 +695,26 @@ for (const fraseSaludo of FRASES_SALUDO) {
     }
   }
 
-  return alertas;
-}
-
-// Deduplicar alertas: si hay alerta de saludo repetido Y de pregunta repetida
-  // con el mismo contenido, conservar solo la de saludo repetido
+  // Deduplicar: si hay alerta de saludo repetido Y de pregunta repetida con el mismo
+  // contenido, conservar solo la de saludo repetido para no duplicar tarjetas en Discord
   const alertasDeduplicadas = [];
   const clavesSaludo = new Set();
- 
+
   for (const alerta of alertas) {
     if (alerta.tipo === 'ERROR_DE_PROMPT' && alerta.detalle.includes('saludo de presentación')) {
-      // Extraer la frase del saludo para usarla como clave
       const match = alerta.detalle.match(/"([^"]+)"/);
       if (match) clavesSaludo.add(match[1]);
       alertasDeduplicadas.push(alerta);
     } else if (alerta.tipo === 'ERROR_DE_PROMPT' && alerta.detalle.includes('repitió la misma pregunta')) {
-      // Si la pregunta repetida es en realidad un saludo ya detectado → omitir
       const esSaludoDuplicado = [...clavesSaludo].some(s => alerta.detalle.toLowerCase().includes(s));
       if (!esSaludoDuplicado) {
         alertasDeduplicadas.push(alerta);
       }
     } else {
       alertasDeduplicadas.push(alerta);
-      });
     }
   }
- 
+
   return alertasDeduplicadas;
 }
 
@@ -919,8 +908,6 @@ async function main() {
       }
     }
   }
-
-
 
   console.log('\n✅ Auditoría finalizada.');
   console.log(`   Conversaciones: ${totalConversaciones} | Alertas: ${totalAlertas}`);
