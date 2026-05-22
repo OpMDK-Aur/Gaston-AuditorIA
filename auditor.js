@@ -722,6 +722,7 @@ for (const fraseSaludo of FRASES_SALUDO) {
       }
     } else {
       alertasDeduplicadas.push(alerta);
+      });
     }
   }
  
