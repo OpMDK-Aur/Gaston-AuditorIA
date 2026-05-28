@@ -47,6 +47,12 @@ const CLIENTES = [
     locationId: process.env.GHL_LOCID_MDK,
     promptFile: 'references/prompts/mdk.md',
   },
+  {
+    nombre: 'A Group',
+    apiKey: process.env.GHL_APIKEY_AGROUP,
+    locationId: process.env.GHL_LOCID_AGROUP,
+    promptFile: 'references/prompts/agroup.md',
+  },
 ];
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
@@ -250,6 +256,12 @@ const FRASES_DERIVACION = {
     'ya paso tus datos así te cuentan bien cómo seguir',
     'ahora te paso con alguien que te pueda armar bien la estrategia',
     'te parece si te derivo con un asesor',
+  ],
+  'A Group': [
+    'te coordino con un asesor del equipo comercial',
+    'un asesor del equipo comercial para que te pase',
+    'te paso con un asesor',
+    'te dejo el brochure',
   ],
 };
 
@@ -632,6 +644,9 @@ const FRASES_SALUDO = [
   'soy la inteligencia artificial de alambrados',
   'hola! soy ramón',
   'soy ramón ramé',
+  'hola! soy cala',
+  'hola, soy cala',
+  'soy cala de a group',
 ];
 
 function detectarPatronesProhibidos(mensajes, nombreCliente) {
