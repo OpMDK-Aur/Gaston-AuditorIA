@@ -2,10 +2,32 @@ name: Aurelia — Auditor GHL Diario
 
 on:
   schedule:
-    # 8:00 AM Argentina (GMT-3) = 11:00 UTC (adelantado para compensar desfasaje de GitHub)
+    # Cada hora de 07:00 a 18:00 Argentina (GMT-3)
+    # Adelantado 1 hora para compensar desfasaje de GitHub Actions
+    # ARG 07:00 = UTC 10:00 → cron a las 09:00 UTC
+    - cron: '0 9 * * *'
+    # ARG 08:00 = UTC 11:00 → cron a las 10:00 UTC
+    - cron: '0 10 * * *'
+    # ARG 09:00 = UTC 12:00 → cron a las 11:00 UTC
     - cron: '0 11 * * *'
-    # 15:00 PM Argentina (GMT-3) = 18:00 UTC (adelantado para compensar desfasaje de GitHub)
+    # ARG 10:00 = UTC 13:00 → cron a las 12:00 UTC
+    - cron: '0 12 * * *'
+    # ARG 11:00 = UTC 14:00 → cron a las 13:00 UTC
+    - cron: '0 13 * * *'
+    # ARG 12:00 = UTC 15:00 → cron a las 14:00 UTC
+    - cron: '0 14 * * *'
+    # ARG 13:00 = UTC 16:00 → cron a las 15:00 UTC
+    - cron: '0 15 * * *'
+    # ARG 14:00 = UTC 17:00 → cron a las 16:00 UTC
+    - cron: '0 16 * * *'
+    # ARG 15:00 = UTC 18:00 → cron a las 17:00 UTC
+    - cron: '0 17 * * *'
+    # ARG 16:00 = UTC 19:00 → cron a las 18:00 UTC
     - cron: '0 18 * * *'
+    # ARG 17:00 = UTC 20:00 → cron a las 19:00 UTC
+    - cron: '0 19 * * *'
+    # ARG 18:00 = UTC 21:00 → cron a las 20:00 UTC
+    - cron: '0 20 * * *'
   workflow_dispatch:
     inputs:
       cliente:
