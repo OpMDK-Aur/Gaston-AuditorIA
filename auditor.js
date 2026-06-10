@@ -53,6 +53,13 @@ const CLIENTES = [
     locationId: process.env.GHL_LOCID_AGROUP,
     promptFile: 'references/prompts/agroup.md',
   },
+  {
+    nombre: 'Go7',
+    apiKey: process.env.GHL_APIKEY_GO7,
+    locationId: process.env.GHL_LOCID_GO7,
+    promptFile: 'references/prompts/go7.md',
+    botName: 'Olivia',
+  },
 ];
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
@@ -262,6 +269,13 @@ const FRASES_DERIVACION = {
     'un asesor del equipo comercial para que te pase',
     'te paso con un asesor',
     'te dejo el brochure',
+  ],
+  'Go7': [
+    'te paso con alexis verna',
+    'te paso con santiago piorno',
+    'te paso con ignacio pedernera',
+    'te paso con federico vieyra',
+    'go7ok.mitiendanube.com',
   ],
 };
 
@@ -647,6 +661,9 @@ const FRASES_SALUDO = [
   'hola! soy cala',
   'hola, soy cala',
   'soy cala de a group',
+  'hola, soy olivia de go7',
+  'hola soy olivia de go7',
+  'soy olivia de go7',
 ];
 
 function detectarPatronesProhibidos(mensajes, nombreCliente) {
