@@ -750,6 +750,34 @@ function detectarPatronesProhibidos(mensajes, nombreCliente) {
   return alertasDeduplicadas;
 }
 
+// ─── DETECCIÓN DE INTERRUPCIÓN DE VENDEDOR EN CONVERSACIÓN IA ────────────────
+
+function detectarInterrupcionVendedor(mensajes, cliente) {
+  const mensajesBot = mensajes.filter(m =>
+    m.direction === 'outbound' && m.userId === OWNER_ASISTENTE_IA
+  );
+
+  if (mensajesBot.length === 0) return null;
+
+  const mensajeVendedor = mensajes.find(m =>
+    m.direction === 'outbound' &&
+    m.userId !== OWNER_ASISTENTE_IA &&
+    m.type !== 'TYPE_ACTIVITY_OPPORTUNITY' &&
+    m.type !== 'TYPE_ACTIVITY_CONTACT' &&
+    (m.body || '').trim() !== ''
+  );
+
+  if (mensajeVendedor) {
+    return {
+      tipo: 'INTERRUPCION_VENDEDOR',
+      timestamp: timestampArgentina(new Date(mensajeVendedor.dateAdded || 0).getTime()),
+      detalle: `Un vendedor humano interrumpió la conversación mientras Olivia estaba activa. Mensaje del vendedor: "${(mensajeVendedor.body || '').substring(0, 100)}"`,
+    };
+  }
+
+  return null;
+}
+
 // ─── OBTENER ESTADO DE CONVERSACIÓN VÍA CUSTOM FIELDS ────────────────────────
 
 async function obtenerEstadoConversacion(cliente, contactId) {
@@ -872,6 +900,12 @@ async function auditarCliente(cliente) {
     const alertaErrorPrompt = await detectarErrorDePrompt(mensajes, cliente);
     if (alertaErrorPrompt) alertas.push(alertaErrorPrompt);
 
+    // Detección de interrupción de vendedor (solo Go7)
+      if (cliente.nombre === 'Go7') {
+        const alertaInterrupcion = detectarInterrupcionVendedor(mensajes, cliente);
+        if (alertaInterrupcion) alertas.push(alertaInterrupcion);
+      }
+
     if (alertas.length > 0) {
       const contactoUrl = `https://app.soyaurelia.com/v2/location/${cliente.locationId}/contacts/detail/${conv.contactId}`;
       alertasPorConversacion.push({ contactoUrl, alertas });
@@ -915,6 +949,7 @@ async function main() {
         const colorEmbed = {
           ERROR_DE_PROMPT: 16776960,        // amarillo
           ERROR_DE_RECONTACTO: 16753920,    // naranja
+          INTERRUPCION_VENDEDOR: 16753920,   // naranja
         }[alerta.tipo] || 15158332;         // rojo por defecto
         const titulo = {
           NO_DERIVACION: '⚠️ No Derivación',
@@ -924,6 +959,7 @@ async function main() {
           ERROR_DE_DESCALIFICACION: '🔴 Error de Descalificación',
           ERROR_DE_RECONTACTO: '🔔 Error de Recontacto',
           ERROR_DE_ASIGNACION: '👤 Error de Asignación',
+          INTERRUPCION_VENDEDOR: '⚠️ Vendedor interrumpió a la IA',
         }[alerta.tipo] || alerta.tipo;
 
         await enviarDiscordEmbed({
