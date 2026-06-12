@@ -42,12 +42,6 @@ const CLIENTES = [
     promptFile: 'references/prompts/alambrados.md',
   },
   {
-    nombre: 'MDK',
-    apiKey: process.env.GHL_APIKEY_MDK,
-    locationId: process.env.GHL_LOCID_MDK,
-    promptFile: 'references/prompts/mdk.md',
-  },
-  {
     nombre: 'A Group',
     apiKey: process.env.GHL_APIKEY_AGROUP,
     locationId: process.env.GHL_LOCID_AGROUP,
@@ -256,13 +250,6 @@ const FRASES_DERIVACION = {
     'derivé tu consulta a nuestros expertos lucas y dante',
     'se van a contactar lo más rápido posible',
     'un vendedor se va a comunicar a la brevedad',
-  ],
-  'MDK': [
-    'te derivo con un asesor',
-    'dale, ahí te conecto con alguien del equipo',
-    'ya paso tus datos así te cuentan bien cómo seguir',
-    'ahora te paso con alguien que te pueda armar bien la estrategia',
-    'te parece si te derivo con un asesor',
   ],
   'A Group': [
     'te coordino con un asesor del equipo comercial',
@@ -650,8 +637,6 @@ const FRASES_SALUDO = [
   'soy fer de nobis',
   'hola! soy lili',
   'soy lili de nobis',
-  'hola! soy valeria',
-  'soy valeria de mdk',
   'hola! soy belén',
   'soy belén',
   'hola! soy la inteligencia artificial de alambrados',
