@@ -57,8 +57,6 @@ jobs:
       GHL_LOCID_SISTCARGAS: ${{ secrets.GHL_LOCID_SISTCARGAS }}
       GHL_APIKEY_ALAMBRADOS: ${{ secrets.GHL_APIKEY_ALAMBRADOS }}
       GHL_LOCID_ALAMBRADOS: ${{ secrets.GHL_LOCID_ALAMBRADOS }}
-      GHL_APIKEY_MDK: ${{ secrets.GHL_APIKEY_MDK }}
-      GHL_LOCID_MDK: ${{ secrets.GHL_LOCID_MDK }}
       GHL_APIKEY_AGROUP: ${{ secrets.GHL_APIKEY_AGROUP }}
       GHL_LOCID_AGROUP: ${{ secrets.GHL_LOCID_AGROUP }}
       GHL_APIKEY_GO7: ${{ secrets.GHL_APIKEY_GO7 }}
