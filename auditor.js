@@ -56,7 +56,7 @@ const CLIENTES = [
   },
 ];
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const ANTHROPIC_API_KEY_AUDITOR = process.env.ANTHROPIC_API_KEY_AUDITOR;
 const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_AURELIA;
 const CLIENTE_FILTRO = process.env.CLIENTE_FILTRO || '';
 const PERIODO_HORAS = parseInt(process.env.PERIODO_HORAS || '24', 10);
@@ -430,7 +430,7 @@ async function callClaudeConRetry(body, intentos = 3) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
+        'x-api-key': ANTHROPIC_API_KEY_AUDITOR,
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify(body),
