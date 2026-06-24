@@ -885,12 +885,10 @@ async function auditarCliente(cliente) {
     const alertaErrorPrompt = await detectarErrorDePrompt(mensajes, cliente);
     if (alertaErrorPrompt) alertas.push(alertaErrorPrompt);
 
-    // Detección de interrupción de vendedor (solo Go7)
-      if (cliente.nombre === 'Go7') {
-        const alertaInterrupcion = detectarInterrupcionVendedor(mensajes, cliente);
-        if (alertaInterrupcion) alertas.push(alertaInterrupcion);
-      }
-
+// Detección de interrupción de vendedor (todos los clientes)
+const alertaInterrupcion = detectarInterrupcionVendedor(mensajes, cliente);
+if (alertaInterrupcion) alertas.push(alertaInterrupcion);
+    
     if (alertas.length > 0) {
       const contactoUrl = `https://app.soyaurelia.com/v2/location/${cliente.locationId}/contacts/detail/${conv.contactId}`;
       alertasPorConversacion.push({ contactoUrl, alertas });
