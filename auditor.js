@@ -311,15 +311,17 @@ async function detectarAlertas(mensajes, conv, cliente, estadoConv, promptRefere
 
   // ── DESCALIFICADO ──────────────────────────────────────────────────────────
   if (estado === 'DESCALIFICADO') {
+     // Excluir mensajes vacíos anteriores al primer inbound y mensajes de recontacto
     const primerInboundIdxD = mensajes.findIndex(m => m.direction === 'inbound');
-    const transcripcion = mensajes
+    const mensajesSinRecontactoD = filtrarMensajesRecontacto(mensajes);
+    const transcripcion = mensajesSinRecontactoD
       .filter((m, idx) => {
-        if ((m.body || '').trim() === '' && m.direction === 'outbound' && primerInboundIdxD !== -1 && idx < primerInboundIdxD) return false;
+        const idxOriginal = mensajes.indexOf(m);
+        if ((m.body || '').trim() === '' && m.direction === 'outbound' && primerInboundIdxD !== -1 && idxOriginal < primerInboundIdxD) return false;
         return true;
       })
       .map(m => `[${m.direction === 'inbound' ? 'USUARIO' : 'BOT'}] ${m.body || ''}`)
       .join('\n');
-    
     const resClaudeDescalif = await callClaudeConRetry({
       model: MODELO_CLAUDE,
       max_tokens: 500,
@@ -464,12 +466,14 @@ async function detectarErrorDePrompt(mensajes, cliente) {
 
   const promptReferencia = leerArchivoReferencia(cliente.promptFile);
   const alertasCriticas = leerArchivoReferencia('references/alertas-criticas.md');
-
- // Excluir mensajes outbound vacíos anteriores al primer inbound (automatizaciones externas)
+  
+ // Excluir mensajes vacíos anteriores al primer inbound y mensajes de recontacto
   const primerInboundIdxT = mensajes.findIndex(m => m.direction === 'inbound');
-  const transcripcion = mensajes
+  const mensajesSinRecontactoT = filtrarMensajesRecontacto(mensajes);
+  const transcripcion = mensajesSinRecontactoT
     .filter((m, idx) => {
-      if ((m.body || '').trim() === '' && m.direction === 'outbound' && primerInboundIdxT !== -1 && idx < primerInboundIdxT) return false;
+      const idxOriginal = mensajes.indexOf(m);
+      if ((m.body || '').trim() === '' && m.direction === 'outbound' && primerInboundIdxT !== -1 && idxOriginal < primerInboundIdxT) return false;
       return true;
     })
     .map(m => `[${m.direction === 'inbound' ? 'USUARIO' : 'BOT'}] ${m.body || ''}`)
@@ -664,13 +668,14 @@ const FRASES_SALUDO = [
 
 function detectarPatronesProhibidos(mensajes, nombreCliente) {
   const alertas = [];
-   // Excluir mensajes outbound vacíos que aparecen ANTES del primer mensaje inbound
-  // (son envíos automáticos de imágenes/archivos por n8n u otras automatizaciones)
-  // Los mensajes vacíos que aparecen DESPUÉS del primer inbound sí se conservan (posible error del bot)
+ // Excluir mensajes outbound vacíos anteriores al primer inbound (automatizaciones externas)
+  // y mensajes de recontacto automático (no deben analizarse como errores)
   const primerInboundIdx = mensajes.findIndex(m => m.direction === 'inbound');
-  const mensajesBot = mensajes.filter((m, idx) => {
+  const mensajesFiltrados = filtrarMensajesRecontacto(mensajes);
+  const mensajesBot = mensajesFiltrados.filter((m, idx) => {
     if (m.direction !== 'outbound') return false;
-    if ((m.body || '').trim() === '' && primerInboundIdx !== -1 && idx < primerInboundIdx) return false;
+    const idxOriginal = mensajes.indexOf(m);
+    if ((m.body || '').trim() === '' && primerInboundIdx !== -1 && idxOriginal < primerInboundIdx) return false;
     return true;
   });
 
@@ -780,6 +785,37 @@ function detectarInterrupcionVendedor(mensajes, cliente) {
   }
 
   return null;
+}
+
+// ─── DETECCIÓN DE MENSAJES DE RECONTACTO ─────────────────────────────────────
+// Un mensaje outbound es un recontacto si:
+// 1. El mensaje anterior del bot (outbound) no fue respondido por el usuario
+// 2. Hay un gap de tiempo significativo (> 60 minutos) desde el último mensaje
+ 
+const UMBRAL_RECONTACTO_MS = 60 * 60 * 1000; // 60 minutos
+ 
+function esRecontacto(mensajes, idxMensaje) {
+  const msg = mensajes[idxMensaje];
+  if (!msg || msg.direction !== 'outbound') return false;
+ 
+  // Buscar el mensaje anterior
+  const anterior = mensajes[idxMensaje - 1];
+  if (!anterior) return false;
+ 
+  // Si el anterior también es outbound (usuario no respondió)
+  if (anterior.direction !== 'outbound') return false;
+ 
+  // Verificar gap de tiempo
+  const tsActual = new Date(msg.dateAdded || 0).getTime();
+  const tsAnterior = new Date(anterior.dateAdded || 0).getTime();
+  const gap = tsActual - tsAnterior;
+ 
+  return gap > UMBRAL_RECONTACTO_MS;
+}
+ 
+function filtrarMensajesRecontacto(mensajes) {
+  // Devuelve los mensajes excluyendo los que son recontactos automáticos
+  return mensajes.filter((m, idx) => !esRecontacto(mensajes, idx));
 }
 
 // ─── OBTENER ESTADO DE CONVERSACIÓN VÍA CUSTOM FIELDS ────────────────────────
