@@ -311,10 +311,15 @@ async function detectarAlertas(mensajes, conv, cliente, estadoConv, promptRefere
 
   // ── DESCALIFICADO ──────────────────────────────────────────────────────────
   if (estado === 'DESCALIFICADO') {
+    const primerInboundIdxD = mensajes.findIndex(m => m.direction === 'inbound');
     const transcripcion = mensajes
+      .filter((m, idx) => {
+        if ((m.body || '').trim() === '' && m.direction === 'outbound' && primerInboundIdxD !== -1 && idx < primerInboundIdxD) return false;
+        return true;
+      })
       .map(m => `[${m.direction === 'inbound' ? 'USUARIO' : 'BOT'}] ${m.body || ''}`)
       .join('\n');
-
+    
     const resClaudeDescalif = await callClaudeConRetry({
       model: MODELO_CLAUDE,
       max_tokens: 500,
@@ -460,7 +465,13 @@ async function detectarErrorDePrompt(mensajes, cliente) {
   const promptReferencia = leerArchivoReferencia(cliente.promptFile);
   const alertasCriticas = leerArchivoReferencia('references/alertas-criticas.md');
 
+ // Excluir mensajes outbound vacíos anteriores al primer inbound (automatizaciones externas)
+  const primerInboundIdxT = mensajes.findIndex(m => m.direction === 'inbound');
   const transcripcion = mensajes
+    .filter((m, idx) => {
+      if ((m.body || '').trim() === '' && m.direction === 'outbound' && primerInboundIdxT !== -1 && idx < primerInboundIdxT) return false;
+      return true;
+    })
     .map(m => `[${m.direction === 'inbound' ? 'USUARIO' : 'BOT'}] ${m.body || ''}`)
     .join('\n');
 
@@ -653,7 +664,15 @@ const FRASES_SALUDO = [
 
 function detectarPatronesProhibidos(mensajes, nombreCliente) {
   const alertas = [];
-  const mensajesBot = mensajes.filter(m => m.direction === 'outbound');
+   // Excluir mensajes outbound vacíos que aparecen ANTES del primer mensaje inbound
+  // (son envíos automáticos de imágenes/archivos por n8n u otras automatizaciones)
+  // Los mensajes vacíos que aparecen DESPUÉS del primer inbound sí se conservan (posible error del bot)
+  const primerInboundIdx = mensajes.findIndex(m => m.direction === 'inbound');
+  const mensajesBot = mensajes.filter((m, idx) => {
+    if (m.direction !== 'outbound') return false;
+    if ((m.body || '').trim() === '' && primerInboundIdx !== -1 && idx < primerInboundIdx) return false;
+    return true;
+  });
 
   // 1. Frases prohibidas globales
   const frasesProhibidas = [
