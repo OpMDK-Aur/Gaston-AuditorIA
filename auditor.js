@@ -54,6 +54,13 @@ const CLIENTES = [
     promptFile: 'references/prompts/go7.md',
     botName: 'Olivia',
   },
+  {
+    nombre: 'Sin Fotomultas',
+    apiKey: process.env.GHL_APIKEY_SINFOTOMULTAS,
+    locationId: process.env.GHL_LOCID_SINFOTOMULTAS,
+    promptFile: 'references/prompts/sinfotomultas.md',
+    botName: 'Laura',
+  },
 ];
 
 const ANTHROPIC_API_KEY_AUDITOR = process.env.ANTHROPIC_API_KEY_AUDITOR;
@@ -263,6 +270,12 @@ const FRASES_DERIVACION = {
     'te paso con ignacio pedernera',
     'te paso con federico vieyra',
     'go7ok.mitiendanube.com',
+  ],
+  'Sin Fotomultas': [
+    'ya derivé tu consulta',
+    'un asesor se va a comunicar con vos',
+    'se va a comunicar con vos en el horario de 10 a 17 hs',
+    'te derivo con un asesor',
   ],
 };
 
@@ -664,6 +677,9 @@ const FRASES_SALUDO = [
   'hola, soy olivia de go7',
   'hola soy olivia de go7',
   'soy olivia de go7',
+  'hola, como estás?, soy laura de sin fotomultas',
+  'soy laura de sin fotomultas',
+  'hola soy laura de sin fotomultas',
 ];
 
 function detectarPatronesProhibidos(mensajes, nombreCliente) {
