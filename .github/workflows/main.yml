@@ -43,12 +43,15 @@ on:
         required: false
         default: ''
 
+permissions:
+  contents: write
+
 jobs:
   auditar:
     runs-on: ubuntu-latest
 
     env:
-      ANTHROPIC_API_KEY_AUDITOR: ${{ secrets.ANTHROPIC_API_KEY_AUDITOR }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       GHL_APIKEY_ICS: ${{ secrets.GHL_APIKEY_ICS }}
       GHL_LOCID_ICS: ${{ secrets.GHL_LOCID_ICS }}
       GHL_APIKEY_NOBIS: ${{ secrets.GHL_APIKEY_NOBIS }}
@@ -61,11 +64,15 @@ jobs:
       GHL_LOCID_AGROUP: ${{ secrets.GHL_LOCID_AGROUP }}
       GHL_APIKEY_GO7: ${{ secrets.GHL_APIKEY_GO7 }}
       GHL_LOCID_GO7: ${{ secrets.GHL_LOCID_GO7 }}
+      GHL_APIKEY_SINFOTOMULTAS: ${{ secrets.GHL_APIKEY_SINFOTOMULTAS }}
+      GHL_LOCID_SINFOTOMULTAS: ${{ secrets.GHL_LOCID_SINFOTOMULTAS }}
       DISCORD_WEBHOOK_AURELIA: ${{ secrets.DISCORD_WEBHOOK_AURELIA }}
 
     steps:
       - name: Checkout repositorio
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Configurar Node.js
         uses: actions/setup-node@v4
@@ -81,3 +88,11 @@ jobs:
           CLIENTE_FILTRO: ${{ github.event.inputs.cliente }}
           PERIODO_HORAS: ${{ github.event.inputs.periodo || '24' }}
           CONTACT_ID_TEST: ${{ github.event.inputs.contact_id }}
+
+      - name: Guardar registro de alertas enviadas
+        run: |
+          git config user.name "Auditor Aurelia"
+          git config user.email "auditor@aurelia.com"
+          git add alertas-enviadas.json || true
+          git diff --staged --quiet || git commit -m "chore: actualizar alertas-enviadas.json [skip ci]"
+          git push || true
