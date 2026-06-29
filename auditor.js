@@ -997,36 +997,74 @@ async function main() {
 
     const fecha = new Date().toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' });
 
-    // Un embed por cada alerta encontrada
-    for (const { contactoUrl, alertas } of alertasPorConversacion) {
-      for (const alerta of alertas) {
-        const colorEmbed = {
-          ERROR_DE_PROMPT: 16776960,        // amarillo
-          ERROR_DE_RECONTACTO: 16753920,    // naranja
-          INTERRUPCION_VENDEDOR: 16753920,   // naranja
-        }[alerta.tipo] || 15158332;         // rojo por defecto
-        const titulo = {
-          NO_DERIVACION: '⚠️ No Derivación',
-          ERROR_DE_PROMPT: '🟡 Error de Prompt',
-          IA_NO_RESPONDE: '🚨 IA No Responde',
-          ERROR_DE_DERIVACION: '🔴 Error de Derivación',
-          ERROR_DE_DESCALIFICACION: '🔴 Error de Descalificación',
-          ERROR_DE_RECONTACTO: '🔔 Error de Recontacto',
-          ERROR_DE_ASIGNACION: '👤 Error de Asignación',
-          INTERRUPCION_VENDEDOR: '⚠️ Vendedor interrumpió a la IA',
-        }[alerta.tipo] || alerta.tipo;
+   // Un embed por contacto agrupando todas las alertas (con deduplicación)
+    for (const { contactoUrl, alertas, convId } of alertasPorConversacion) {
+      // Filtrar alertas que ya fueron enviadas
+      const alertasNuevas = alertas.filter(alerta => {
+        if (yaFueAlertada(alertasEnviadas, convId, alerta.tipo)) {
+          console.log(`   → [DEDUP] Omitiendo alerta ya enviada: ${convId} / ${alerta.tipo}`);
+          return false;
+        }
+        return true;
+      });
 
-        await enviarDiscordEmbed({
-          color: colorEmbed,
-          title: titulo,
-          fields: [
-            { name: 'Cliente', value: cliente.nombre, inline: true },
-            { name: 'Hora', value: alerta.timestamp, inline: true },
-            { name: 'Contacto', value: contactoUrl, inline: false },
-            { name: 'Detalle', value: alerta.detalle, inline: false },
-          ],
-          footer: { text: `Auditor Aurelia — ${fecha}` },
+      if (alertasNuevas.length === 0) continue;
+
+      const TITULOS = {
+        NO_DERIVACION: '⚠️ No Derivación',
+        ERROR_DE_PROMPT: '🟡 Error de Prompt',
+        IA_NO_RESPONDE: '🚨 IA No Responde',
+        ERROR_DE_DERIVACION: '🔴 Error de Derivación',
+        ERROR_DE_DESCALIFICACION: '🔴 Error de Descalificación',
+        ERROR_DE_RECONTACTO: '🔔 Error de Recontacto',
+        ERROR_DE_ASIGNACION: '👤 Error de Asignación',
+        INTERRUPCION_VENDEDOR: '⚠️ Vendedor interrumpió a la IA',
+      };
+
+      const COLORES = {
+        ERROR_DE_PROMPT: 16776960,
+        ERROR_DE_RECONTACTO: 16753920,
+        INTERRUPCION_VENDEDOR: 16753920,
+      };
+
+      // Color según alerta más grave
+      const colorEmbed = alertasNuevas.some(a => !COLORES[a.tipo])
+        ? 15158332
+        : alertasNuevas.some(a => COLORES[a.tipo] === 16753920)
+          ? 16753920
+          : 16776960;
+
+      // Título: genérico si hay múltiples errores
+      const titulo = alertasNuevas.length === 1
+        ? (TITULOS[alertasNuevas[0].tipo] || alertasNuevas[0].tipo)
+        : `⚠️ ${alertasNuevas.length} errores detectados`;
+
+      // Fields: contacto + una entrada por alerta
+      const fields = [
+        { name: 'Cliente', value: cliente.nombre, inline: true },
+        { name: 'Hora', value: alertasNuevas[0].timestamp, inline: true },
+        { name: 'Contacto', value: contactoUrl, inline: false },
+      ];
+
+      for (const alerta of alertasNuevas) {
+        const tituloAlerta = TITULOS[alerta.tipo] || alerta.tipo;
+        fields.push({
+          name: tituloAlerta,
+          value: alerta.detalle,
+          inline: false,
         });
+      }
+
+      await enviarDiscordEmbed({
+        color: colorEmbed,
+        title: titulo,
+        fields,
+        footer: { text: `Auditor Aurelia — ${fecha}` },
+      });
+
+      // Registrar todas las alertas como enviadas
+      for (const alerta of alertasNuevas) {
+        registrarAlerta(alertasEnviadas, convId, alerta.tipo);
       }
     }
   }
