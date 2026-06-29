@@ -14,6 +14,7 @@ const CLIENTES = [
     apiKey: process.env.GHL_APIKEY_ICS,
     locationId: process.env.GHL_LOCID_ICS,
     promptFile: 'references/prompts/ics.md',
+    botName: 'Belén',
   },
   {
     nombre: 'Nobis',
@@ -34,18 +35,21 @@ const CLIENTES = [
     apiKey: process.env.GHL_APIKEY_SISTCARGAS,
     locationId: process.env.GHL_LOCID_SISTCARGAS,
     promptFile: 'references/prompts/sistcargas.md',
+    botName: 'Sofi',
   },
   {
     nombre: 'Alambrados Patagonia',
     apiKey: process.env.GHL_APIKEY_ALAMBRADOS,
     locationId: process.env.GHL_LOCID_ALAMBRADOS,
     promptFile: 'references/prompts/alambrados.md',
+    botName: 'IA Alambrados',
   },
   {
     nombre: 'A Group',
     apiKey: process.env.GHL_APIKEY_AGROUP,
     locationId: process.env.GHL_LOCID_AGROUP,
     promptFile: 'references/prompts/agroup.md',
+    botName: 'Cala',
   },
   {
     nombre: 'Go7',
@@ -796,7 +800,7 @@ function detectarInterrupcionVendedor(mensajes, cliente) {
     return {
       tipo: 'INTERRUPCION_VENDEDOR',
       timestamp: timestampArgentina(new Date(mensajeVendedor.dateAdded || 0).getTime()),
-      detalle: `Un vendedor humano interrumpió la conversación mientras Olivia estaba activa. Mensaje del vendedor: "${(mensajeVendedor.body || '').substring(0, 100)}"`,
+      detalle: `Un vendedor humano interrumpió la conversación mientras ${nombreBot} estaba activo/a. Mensaje del vendedor: "${(mensajeVendedor.body || '').substring(0, 100)}"`,
     };
   }
 
