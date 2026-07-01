@@ -44,6 +44,7 @@ const CLIENTES = [
     promptFile: 'references/prompts/alambrados.md',
     botName: 'IA Alambrados',
   },
+
   {
     nombre: 'A Group',
     apiKey: process.env.GHL_APIKEY_AGROUP,
@@ -52,22 +53,22 @@ const CLIENTES = [
     botName: 'Cala',
   },
   {
-    nombre: 'Go7',
-    apiKey: process.env.GHL_APIKEY_GO7,
-    locationId: process.env.GHL_LOCID_GO7,
-    promptFile: 'references/prompts/go7.md',
-    botName: 'Olivia',
-  },
-  {
     nombre: 'Sin Fotomultas',
     apiKey: process.env.GHL_APIKEY_SINFOTOMULTAS,
     locationId: process.env.GHL_LOCID_SINFOTOMULTAS,
     promptFile: 'references/prompts/sinfotomultas.md',
     botName: 'Laura',
   },
+  {
+    nombre: 'Go7',
+    apiKey: process.env.GHL_APIKEY_GO7,
+    locationId: process.env.GHL_LOCID_GO7,
+    promptFile: 'references/prompts/go7.md',
+    botName: 'Olivia',
+  },
 ];
 
-const ANTHROPIC_API_KEY_AUDITOR = process.env.ANTHROPIC_API_KEY_AUDITOR;
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_AURELIA;
 const CLIENTE_FILTRO = process.env.CLIENTE_FILTRO || '';
 const PERIODO_HORAS = parseInt(process.env.PERIODO_HORAS || '24', 10);
@@ -107,6 +108,64 @@ function leerArchivoReferencia(filePath) {
     return fs.readFileSync(path.join(process.cwd(), filePath), 'utf8');
   } catch (e) {
     return `[No se pudo leer ${filePath}]`;
+  }
+}
+
+
+// ─── DEDUPLICACIÓN DE ALERTAS ─────────────────────────────────────────────────
+
+const ARCHIVO_ALERTAS = 'alertas-enviadas.json';
+// Expiración: 7 días. Si una alerta no se repite en 7 días, se limpia del registro.
+const EXPIRACION_MS = 7 * 24 * 60 * 60 * 1000;
+
+function cargarAlertasEnviadas() {
+  try {
+    if (fs.existsSync(path.join(process.cwd(), ARCHIVO_ALERTAS))) {
+      const data = JSON.parse(fs.readFileSync(path.join(process.cwd(), ARCHIVO_ALERTAS), 'utf8'));
+      return data;
+    }
+  } catch (e) {
+    console.error('Error al leer alertas-enviadas.json:', e.message);
+  }
+  return {};
+}
+
+function guardarAlertasEnviadas(alertas) {
+  try {
+    fs.writeFileSync(
+      path.join(process.cwd(), ARCHIVO_ALERTAS),
+      JSON.stringify(alertas, null, 2),
+      'utf8'
+    );
+  } catch (e) {
+    console.error('Error al guardar alertas-enviadas.json:', e.message);
+  }
+}
+
+function claveAlerta(convId, tipo) {
+  return `${convId}__${tipo}`;
+}
+
+function yaFueAlertada(alertasEnviadas, convId, tipo) {
+  const clave = claveAlerta(convId, tipo);
+  const registro = alertasEnviadas[clave];
+  if (!registro) return false;
+  // Si expiró (más de 7 días), considerar como nueva
+  if (Date.now() - registro.timestamp > EXPIRACION_MS) return false;
+  return true;
+}
+
+function registrarAlerta(alertasEnviadas, convId, tipo) {
+  const clave = claveAlerta(convId, tipo);
+  alertasEnviadas[clave] = { timestamp: Date.now() };
+}
+
+function limpiarAlertasExpiradas(alertasEnviadas) {
+  const ahora = Date.now();
+  for (const clave of Object.keys(alertasEnviadas)) {
+    if (ahora - alertasEnviadas[clave].timestamp > EXPIRACION_MS) {
+      delete alertasEnviadas[clave];
+    }
   }
 }
 
@@ -262,6 +321,7 @@ const FRASES_DERIVACION = {
     'se van a contactar lo más rápido posible',
     'un vendedor se va a comunicar a la brevedad',
   ],
+
   'A Group': [
     'te coordino con un asesor del equipo comercial',
     'un asesor del equipo comercial para que te pase',
@@ -328,7 +388,7 @@ async function detectarAlertas(mensajes, conv, cliente, estadoConv, promptRefere
 
   // ── DESCALIFICADO ──────────────────────────────────────────────────────────
   if (estado === 'DESCALIFICADO') {
-     // Excluir mensajes vacíos anteriores al primer inbound y mensajes de recontacto
+    // Excluir mensajes vacíos anteriores al primer inbound y mensajes de recontacto
     const primerInboundIdxD = mensajes.findIndex(m => m.direction === 'inbound');
     const mensajesSinRecontactoD = filtrarMensajesRecontacto(mensajes);
     const transcripcion = mensajesSinRecontactoD
@@ -339,6 +399,7 @@ async function detectarAlertas(mensajes, conv, cliente, estadoConv, promptRefere
       })
       .map(m => `[${m.direction === 'inbound' ? 'USUARIO' : 'BOT'}] ${m.body || ''}`)
       .join('\n');
+
     const resClaudeDescalif = await callClaudeConRetry({
       model: MODELO_CLAUDE,
       max_tokens: 500,
@@ -454,7 +515,7 @@ async function callClaudeConRetry(body, intentos = 3) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY_AUDITOR,
+        'x-api-key': ANTHROPIC_API_KEY,
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify(body),
@@ -483,8 +544,8 @@ async function detectarErrorDePrompt(mensajes, cliente) {
 
   const promptReferencia = leerArchivoReferencia(cliente.promptFile);
   const alertasCriticas = leerArchivoReferencia('references/alertas-criticas.md');
-  
- // Excluir mensajes vacíos anteriores al primer inbound y mensajes de recontacto
+
+  // Excluir mensajes vacíos anteriores al primer inbound y mensajes de recontacto
   const primerInboundIdxT = mensajes.findIndex(m => m.direction === 'inbound');
   const mensajesSinRecontactoT = filtrarMensajesRecontacto(mensajes);
   const transcripcion = mensajesSinRecontactoT
@@ -688,7 +749,7 @@ const FRASES_SALUDO = [
 
 function detectarPatronesProhibidos(mensajes, nombreCliente) {
   const alertas = [];
- // Excluir mensajes outbound vacíos anteriores al primer inbound (automatizaciones externas)
+  // Excluir mensajes outbound vacíos anteriores al primer inbound (automatizaciones externas)
   // y mensajes de recontacto automático (no deben analizarse como errores)
   const primerInboundIdx = mensajes.findIndex(m => m.direction === 'inbound');
   const mensajesFiltrados = filtrarMensajesRecontacto(mensajes);
@@ -779,24 +840,30 @@ function detectarPatronesProhibidos(mensajes, nombreCliente) {
   return alertasDeduplicadas;
 }
 
+
 // ─── DETECCIÓN DE INTERRUPCIÓN DE VENDEDOR EN CONVERSACIÓN IA ────────────────
 
 function detectarInterrupcionVendedor(mensajes, cliente) {
+  // Un vendedor humano interrumpió si hay un mensaje outbound
+  // que NO fue enviado por el Asistente IA (userId diferente o undefined)
+  // y hay también mensajes del bot en la misma conversación
+
   const mensajesBot = mensajes.filter(m =>
     m.direction === 'outbound' && m.userId === OWNER_ASISTENTE_IA
   );
 
-  if (mensajesBot.length === 0) return null;
+  if (mensajesBot.length === 0) return null; // No hay mensajes de la IA, no aplica
 
   const mensajeVendedor = mensajes.find(m =>
     m.direction === 'outbound' &&
     m.userId !== OWNER_ASISTENTE_IA &&
-    m.type !== 'TYPE_ACTIVITY_OPPORTUNITY' &&
+    m.type !== 'TYPE_ACTIVITY_OPPORTUNITY' && // ignorar actividades del sistema
     m.type !== 'TYPE_ACTIVITY_CONTACT' &&
     (m.body || '').trim() !== ''
   );
 
   if (mensajeVendedor) {
+    const nombreBot = cliente.botName || 'el Asistente IA';
     return {
       tipo: 'INTERRUPCION_VENDEDOR',
       timestamp: timestampArgentina(new Date(mensajeVendedor.dateAdded || 0).getTime()),
@@ -807,32 +874,33 @@ function detectarInterrupcionVendedor(mensajes, cliente) {
   return null;
 }
 
+
 // ─── DETECCIÓN DE MENSAJES DE RECONTACTO ─────────────────────────────────────
 // Un mensaje outbound es un recontacto si:
 // 1. El mensaje anterior del bot (outbound) no fue respondido por el usuario
 // 2. Hay un gap de tiempo significativo (> 60 minutos) desde el último mensaje
- 
+
 const UMBRAL_RECONTACTO_MS = 60 * 60 * 1000; // 60 minutos
- 
+
 function esRecontacto(mensajes, idxMensaje) {
   const msg = mensajes[idxMensaje];
   if (!msg || msg.direction !== 'outbound') return false;
- 
+
   // Buscar el mensaje anterior
   const anterior = mensajes[idxMensaje - 1];
   if (!anterior) return false;
- 
+
   // Si el anterior también es outbound (usuario no respondió)
   if (anterior.direction !== 'outbound') return false;
- 
+
   // Verificar gap de tiempo
   const tsActual = new Date(msg.dateAdded || 0).getTime();
   const tsAnterior = new Date(anterior.dateAdded || 0).getTime();
   const gap = tsActual - tsAnterior;
- 
+
   return gap > UMBRAL_RECONTACTO_MS;
 }
- 
+
 function filtrarMensajesRecontacto(mensajes) {
   // Devuelve los mensajes excluyendo los que son recontactos automáticos
   return mensajes.filter((m, idx) => !esRecontacto(mensajes, idx));
@@ -960,13 +1028,13 @@ async function auditarCliente(cliente) {
     const alertaErrorPrompt = await detectarErrorDePrompt(mensajes, cliente);
     if (alertaErrorPrompt) alertas.push(alertaErrorPrompt);
 
-// Detección de interrupción de vendedor (todos los clientes)
-const alertaInterrupcion = detectarInterrupcionVendedor(mensajes, cliente);
-if (alertaInterrupcion) alertas.push(alertaInterrupcion);
-    
+    // Detección de interrupción de vendedor (todos los clientes)
+    const alertaInterrupcion = detectarInterrupcionVendedor(mensajes, cliente);
+    if (alertaInterrupcion) alertas.push(alertaInterrupcion);
+
     if (alertas.length > 0) {
       const contactoUrl = `https://app.soyaurelia.com/v2/location/${cliente.locationId}/contacts/detail/${conv.contactId}`;
-      alertasPorConversacion.push({ contactoUrl, alertas });
+      alertasPorConversacion.push({ contactoUrl, alertas, convId: conv.id });
     }
 
     await sleep(300);
@@ -977,6 +1045,11 @@ if (alertaInterrupcion) alertas.push(alertaInterrupcion);
 
 async function main() {
   console.log('🚀 Iniciando Auditoría Aurelia GHL...');
+
+  // Cargar registro de alertas ya enviadas
+  const alertasEnviadas = cargarAlertasEnviadas();
+  limpiarAlertasExpiradas(alertasEnviadas);
+  console.log(`   → Alertas en registro: ${Object.keys(alertasEnviadas).length}`);
 
   const clientesAfiltrar = CLIENTE_FILTRO
     ? CLIENTES.filter(c => c.nombre.toLowerCase().includes(CLIENTE_FILTRO.toLowerCase()))
@@ -1001,77 +1074,55 @@ async function main() {
 
     const fecha = new Date().toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' });
 
-   // Un embed por contacto agrupando todas las alertas (con deduplicación)
+    // Un embed por cada alerta encontrada (con deduplicación)
     for (const { contactoUrl, alertas, convId } of alertasPorConversacion) {
-      // Filtrar alertas que ya fueron enviadas
-      const alertasNuevas = alertas.filter(alerta => {
+      for (const alerta of alertas) {
+        // Si ya fue alertada y no expiró → omitir
         if (yaFueAlertada(alertasEnviadas, convId, alerta.tipo)) {
           console.log(`   → [DEDUP] Omitiendo alerta ya enviada: ${convId} / ${alerta.tipo}`);
-          return false;
+          continue;
         }
-        return true;
-      });
+        const colorEmbed = {
+          ERROR_DE_PROMPT: 16776960,        // amarillo
+          ERROR_DE_RECONTACTO: 16753920,    // naranja
+          INTERRUPCION_VENDEDOR: 16753920,   // naranja
+        }[alerta.tipo] || 15158332;         // rojo por defecto
+        const titulo = {
+          NO_DERIVACION: '⚠️ No Derivación',
+          ERROR_DE_PROMPT: '🟡 Error de Prompt',
+          IA_NO_RESPONDE: '🚨 IA No Responde',
+          ERROR_DE_DERIVACION: '🔴 Error de Derivación',
+          ERROR_DE_DESCALIFICACION: '🔴 Error de Descalificación',
+          ERROR_DE_RECONTACTO: '🔔 Error de Recontacto',
+          ERROR_DE_ASIGNACION: '👤 Error de Asignación',
+          INTERRUPCION_VENDEDOR: '⚠️ Vendedor interrumpió a la IA',
+        }[alerta.tipo] || alerta.tipo;
 
-      if (alertasNuevas.length === 0) continue;
-
-      const TITULOS = {
-        NO_DERIVACION: '⚠️ No Derivación',
-        ERROR_DE_PROMPT: '🟡 Error de Prompt',
-        IA_NO_RESPONDE: '🚨 IA No Responde',
-        ERROR_DE_DERIVACION: '🔴 Error de Derivación',
-        ERROR_DE_DESCALIFICACION: '🔴 Error de Descalificación',
-        ERROR_DE_RECONTACTO: '🔔 Error de Recontacto',
-        ERROR_DE_ASIGNACION: '👤 Error de Asignación',
-        INTERRUPCION_VENDEDOR: '⚠️ Vendedor interrumpió a la IA',
-      };
-
-      const COLORES = {
-        ERROR_DE_PROMPT: 16776960,
-        ERROR_DE_RECONTACTO: 16753920,
-        INTERRUPCION_VENDEDOR: 16753920,
-      };
-
-      // Color según alerta más grave
-      const colorEmbed = alertasNuevas.some(a => !COLORES[a.tipo])
-        ? 15158332
-        : alertasNuevas.some(a => COLORES[a.tipo] === 16753920)
-          ? 16753920
-          : 16776960;
-
-      // Título: genérico si hay múltiples errores
-      const titulo = alertasNuevas.length === 1
-        ? (TITULOS[alertasNuevas[0].tipo] || alertasNuevas[0].tipo)
-        : `⚠️ ${alertasNuevas.length} errores detectados`;
-
-      // Fields: contacto + una entrada por alerta
-      const fields = [
-        { name: 'Cliente', value: cliente.nombre, inline: true },
-        { name: 'Hora', value: alertasNuevas[0].timestamp, inline: true },
-        { name: 'Contacto', value: contactoUrl, inline: false },
-      ];
-
-      for (const alerta of alertasNuevas) {
-        const tituloAlerta = TITULOS[alerta.tipo] || alerta.tipo;
-        fields.push({
-          name: tituloAlerta,
-          value: alerta.detalle,
-          inline: false,
+        await enviarDiscordEmbed({
+          color: colorEmbed,
+          title: titulo,
+          fields: [
+            { name: 'Cliente', value: cliente.nombre, inline: true },
+            { name: 'Hora', value: alerta.timestamp, inline: true },
+            { name: 'Contacto', value: contactoUrl, inline: false },
+            { name: 'Detalle', value: alerta.detalle, inline: false },
+          ],
+          footer: { text: `Auditor Aurelia — ${fecha}` },
         });
-      }
 
-      await enviarDiscordEmbed({
-        color: colorEmbed,
-        title: titulo,
-        fields,
-        footer: { text: `Auditor Aurelia — ${fecha}` },
-      });
-
-      // Registrar todas las alertas como enviadas
-      for (const alerta of alertasNuevas) {
+        // Registrar alerta como enviada
         registrarAlerta(alertasEnviadas, convId, alerta.tipo);
       }
     }
   }
+
+  // Guardar registro actualizado
+  guardarAlertasEnviadas(alertasEnviadas);
+  console.log(`   → Registro de alertas guardado: ${Object.keys(alertasEnviadas).length} entradas`);
+
+  // Guardar registro actualizado
+  guardarAlertasEnviadas(alertasEnviadas);
+  console.log(`   → Registro de alertas guardado: ${Object.keys(alertasEnviadas).length} entradas`);
 
   console.log('\n✅ Auditoría finalizada.');
   console.log(`   Conversaciones: ${totalConversaciones} | Alertas: ${totalAlertas}`);
