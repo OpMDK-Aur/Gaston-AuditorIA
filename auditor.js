@@ -59,6 +59,13 @@ const CLIENTES = [
     promptFile: 'references/prompts/sinfotomultas.md',
     botName: 'Laura',
   },
+   {
+    nombre: 'Líder Coach',
+    apiKey: process.env.GHL_APIKEY_LIDERCOACH,
+    locationId: process.env.GHL_LOCID_LIDERCOACH,
+    promptFile: 'references/prompts/lidercoach.md',
+    botName: 'Lucía',
+  },
   {
     nombre: 'Go7',
     apiKey: process.env.GHL_APIKEY_GO7,
@@ -340,6 +347,14 @@ const FRASES_DERIVACION = {
     'un asesor se va a comunicar con vos',
     'se va a comunicar con vos en el horario de 10 a 17 hs',
     'te derivo con un asesor',
+  ],
+   'Líder Coach': [
+    'te derivo con mariano',
+    'te derivo con analía',
+    'te derivo con nicolás',
+    'mariano te va a dar toda la información',
+    'analía te va a dar toda la información',
+    'nicolás te va a dar toda la información',
   ],
 };
 
@@ -745,6 +760,9 @@ const FRASES_SALUDO = [
   'hola, como estás?, soy laura de sin fotomultas',
   'soy laura de sin fotomultas',
   'hola soy laura de sin fotomultas',
+  'holaa, soy lucía, asistente virtual de lider coach',
+  'soy lucía, asistente virtual de lider coach',
+  'hola soy lucía de lider coach',
 ];
 
 function detectarPatronesProhibidos(mensajes, nombreCliente) {
