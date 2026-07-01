@@ -999,15 +999,6 @@ async function auditarCliente(cliente) {
     const mensajes = await obtenerMensajes(cliente, conv.id);
     if (mensajes.length === 0) continue;
 
-    // Filtrar por botName si el cliente lo tiene definido
-    if (cliente.botName) {
-      const tieneMensajeDelBot = mensajes.some(m => {
-        const nombre = (m.fromName || m.author || '').toLowerCase();
-        return nombre.includes(cliente.botName.toLowerCase());
-      });
-      if (!tieneMensajeDelBot) continue;
-    }
-
     // Obtener estado de la conversación via custom fields
     const contactId = conv.contactId || conv.id;
     const estadoConv = await obtenerEstadoConversacion(cliente, contactId);
