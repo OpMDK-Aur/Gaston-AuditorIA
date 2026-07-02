@@ -66,6 +66,13 @@ const CLIENTES = [
     promptFile: 'references/prompts/lidercoach.md',
     botName: 'Lucía',
   },
+   {
+    nombre: 'Donadio',
+    apiKey: process.env.GHL_APIKEY_DONADIO,
+    locationId: process.env.GHL_LOCID_DONADIO,
+    promptFile: 'references/prompts/donadio.md',
+    botName: 'Valeria',
+  },
   {
     nombre: 'Go7',
     apiKey: process.env.GHL_APIKEY_GO7,
@@ -355,6 +362,16 @@ const FRASES_DERIVACION = {
     'mariano te va a dar toda la información',
     'analía te va a dar toda la información',
     'nicolás te va a dar toda la información',
+  ],
+   'Donadio': [
+    'te derivo con el equipo de donadio',
+    'te derivo con tu asesor asignado',
+    'te derivo con un asesor comercial de donadio',
+    'te derivo con el equipo comercial',
+    'te derivo con logística',
+    'te derivo con administración',
+    'el equipo te va a responder',
+    'un asesor te va a contactar',
   ],
 };
 
@@ -763,6 +780,9 @@ const FRASES_SALUDO = [
   'holaa, soy lucía, asistente virtual de lider coach',
   'soy lucía, asistente virtual de lider coach',
   'hola soy lucía de lider coach',
+   'hola, cómo estás? soy valeria, asistente de donadio',
+  'soy valeria, asistente de donadio',
+  'hola soy valeria de donadio',
 ];
 
 function detectarPatronesProhibidos(mensajes, nombreCliente) {
